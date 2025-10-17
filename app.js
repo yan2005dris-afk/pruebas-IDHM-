@@ -1,8 +1,8 @@
 // =======================================================
-// app.js: Integración de Three.js, GLB, MediaPipe y Cámara
+// app.js: Integración de Three.js, GLB, MediaPipe y Control Dual
 // =======================================================
 
-// Variables globales (Declaración única)
+// Variables globales
 let videoElement;
 let scene, camera, renderer, model;
 let hands;
@@ -62,13 +62,10 @@ function setupCamera() {
                 videoElement.onloadedmetadata = function() {
                     videoElement.play();
                     
-                    // Llama a initThreeJs() SOLO si aún no está inicializado
                     if(!renderer) initThreeJs(); 
 
-                    // Configura el renderizador para transparencia si es necesario
                     renderer.setClearAlpha(0);
                     renderer.domElement.style.background = 'transparent';
-
 
                     // Inicia el envío de frames a MediaPipe
                     cameraUtil = new Camera(videoElement, {
@@ -99,14 +96,12 @@ function initThreeJs() {
     const width = window.innerWidth;
     const height = window.innerHeight;
 
-    // Solo inicializa una vez
     if (renderer) return; 
     
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
     camera.position.z = 5;
 
-    // El alpha inicial se toma del currentMode
     renderer = new THREE.WebGLRenderer({
         antialias: true,
         alpha: currentMode === 'camera' 
@@ -126,7 +121,7 @@ function initThreeJs() {
     // Cargar el Modelo .glb
     const loader = new THREE.GLTFLoader();
     loader.load(
-        'assets/modelo.glb', // ¡Asegúrate de cambiar esta ruta!
+        'assets/modelo.glb', // <<-- RUTA CORREGIDA SEGÚN TU CAPTURA
         function (gltf) {
             model = gltf.scene;
             model.scale.set(1, 1, 1); 
@@ -179,8 +174,8 @@ function animate() {
     if (currentMode === 'canvas' && controls) {
         controls.update();
         // Rotación automática solo si el ratón NO está siendo usado
-        if(model && !controls.enabled){
-            model.rotation.y += 0.005;        
+        if(model && controls.enabled){ 
+            model.rotation.y += 0.005; 
         }
     }
     renderer.render(scene, camera);
@@ -188,7 +183,7 @@ function animate() {
 
 
 // ===================================
-// 4. MAPEO DE COORDENADAS (Control)
+// 4. MAPEO DE COORDENADAS (Control de Mano)
 // ===================================
 
 function updateModelAndHandVisualization(landmarks) {
@@ -199,6 +194,7 @@ function updateModelAndHandVisualization(landmarks) {
     
     // Cámara trasera: NO se invierte X
     const mappedX = indexFingerTip.x * 10 - 5; 
+    // Y se invierte (0 es arriba en el navegador)
     const mappedY = (1 - indexFingerTip.y) * 10 - 5; 
 
     model.position.x = mappedX;
@@ -228,10 +224,13 @@ function startApp(mode) {
     
     document.getElementById('startScreen').style.display = 'none';
 
+    // 1. Inicializa Three.js si es la primera vez
+    if (!renderer) {
+        initThreeJs();
+    }
     
     if (mode === 'camera') {
         // MODO CÁMARA (Control de Manos)
-        // Llama a setupCamera, que a su vez llama a initThreeJs
         setupCamera(); 
         
         if(controls){
@@ -240,11 +239,6 @@ function startApp(mode) {
 
     } else if (mode === 'canvas') {
         // MODO SOLO LIENZO 3D (Control con Ratón)
-        
-        // Inicializa Three.js si es la primera vez
-        if(!renderer) {
-            initThreeJs();
-        }
         
         // Ocultar la cámara
         document.getElementById('videoElement').style.display = 'none';
