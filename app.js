@@ -1,8 +1,8 @@
 // =======================================================
-// app.js: Integración de Three.js, GLB, MediaPipe y Control Dual
+// app.js: Integración de Three.js, GLB, MediaPipe y CONTROL REMOTO (Firestore)
 // =======================================================
 
-// Variables globales
+// Variables globales para Three.js, MediaPipe y Firestore
 let videoElement;
 let scene, camera, renderer, model;
 let hands;
@@ -10,21 +10,48 @@ let cameraUtil;
 let handLandmarks = [];
 let handPoints = []; // Mallas 3D para visualizar los 21 puntos de la mano
 let currentMode = 'canvas'; 
-let controls; // Control de ratón (OrbitControls)
+let controls; 
+
+let db; // Instancia de Firebase Firestore (inicializada en el HTML)
+let userId; // ID de usuario de Firebase
+let sessionRef = null; // Referencia al documento de sesión en Firestore
+
+// ===================================
+// UTILERÍAS FIREBASE (Se ejecutan al cargar)
+// ===================================
+
+// Función que se ejecuta cuando Firebase está listo (llamada desde el script del HTML)
+window.onFirebaseReady = () => {
+    // Estas variables son inicializadas en el script type="module" del HTML
+    db = window.db;
+    userId = window.userId;
+    console.log("App ready. DB and User ID loaded.");
+};
+
+// Genera un código de sesión de 6 dígitos
+function generateSessionId() {
+    // Genera una cadena aleatoria y la convierte a 6 caracteres en mayúsculas
+    return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
 
 // ===================================
 // 1. CONFIGURACIÓN MEDIAPIPE
 // ===================================
 
 function onResults(results) {
+    // En modo 'camera', el onResults solo EMITE datos
     if (currentMode !== 'camera') return;
 
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         handLandmarks = results.multiHandLandmarks;
-        updateModelAndHandVisualization(handLandmarks[0]);
+        // La función de actualización ahora EMITE los datos
+        emitHandData(handLandmarks[0]);
     } else {
         handLandmarks = [];
         handPoints.forEach(p => p.visible = false);
+        // Enviar un estado 'no-hand' para que el receptor sepa que oculte los puntos
+        emitHandData(null);
     }
 }
 
@@ -64,6 +91,7 @@ function setupCamera() {
                     
                     if(!renderer) initThreeJs(); 
 
+                    // Configuración visual para modo cámara
                     renderer.setClearAlpha(0);
                     renderer.domElement.style.background = 'transparent';
 
@@ -124,7 +152,6 @@ function initThreeJs() {
         'assets/modelo.glb', 
         function (gltf) {
             model = gltf.scene;
-            // *** SOLUCIÓN B: Reducir la escala para asegurar que se vea completamente ***
             model.scale.set(0.5, 0.5, 0.5); 
             model.position.set(0, 0, 0); 
             scene.add(model);
@@ -174,6 +201,7 @@ function animate() {
 
     if (currentMode === 'canvas' && controls) {
         controls.update();
+        // Rotación automática solo si el ratón NO está siendo usado
         if(model && controls.enabled){ 
             model.rotation.y += 0.005; 
         }
@@ -183,11 +211,84 @@ function animate() {
 
 
 // ===================================
-// 4. MAPEO DE COORDENADAS (Control de Mano)
+// 4. EMISIÓN Y RECEPCIÓN DE DATOS (Firestore)
 // ===================================
 
+/**
+ * [EMISOR] Envía los datos de la mano a Firestore (Modo 'camera').
+ * @param {Array} landmarks - 21 puntos clave de la mano o null si no se detecta.
+ */
+function emitHandData(landmarks) {
+    if (!sessionRef) {
+        // Esto solo debería pasar si el usuario sale del modo sin apagar la cámara
+        console.warn("Session reference not set, cannot emit data.");
+        return;
+    }
+
+    let data;
+    if (landmarks) {
+        // Reducimos la información solo a las coordenadas X, Y, Z (para ahorrar ancho de banda)
+        const simplifiedLandmarks = landmarks.map(l => ({ x: l.x, y: l.y, z: l.z }));
+        data = {
+            landmarks: simplifiedLandmarks,
+            timestamp: Date.now(),
+            active: true
+        };
+    } else {
+        data = { active: false, timestamp: Date.now() };
+    }
+
+    // setDoc está disponible gracias a la importación en el HTML
+    setDoc(sessionRef, data, { merge: true }).catch(error => {
+        console.error("Error al escribir en Firestore:", error);
+    });
+}
+
+/**
+ * [RECEPTOR] Configura un listener para recibir datos de la mano (Modo 'canvas').
+ */
+function setupRemoteListener() {
+    if (!sessionRef) {
+        console.error("Session reference not set.");
+        return;
+    }
+    
+    const statusElement = document.getElementById('sessionStatus');
+    statusElement.textContent = `ESCUCHANDO SESIÓN: ${sessionRef.id}`;
+
+    // onSnapshot está disponible gracias a la importación en el HTML
+    onSnapshot(sessionRef, (docSnapshot) => {
+        if (docSnapshot.exists()) {
+            const data = docSnapshot.data();
+
+            if (data.active && data.landmarks) {
+                // Hay datos de mano activos, los usamos para actualizar la visualización.
+                statusElement.textContent = `CONTROL ACTIVO desde ${sessionRef.id}`;
+                updateModelAndHandVisualization(data.landmarks);
+            } else {
+                // No hay mano activa. Ocultamos los puntos.
+                statusElement.textContent = `ESPERANDO MANO en ${sessionRef.id}`;
+                handPoints.forEach(p => p.visible = false);
+            }
+        } else {
+            // El documento no existe o se eliminó.
+            statusElement.textContent = `SESIÓN ${sessionRef.id} NO ENCONTRADA o FINALIZADA.`;
+            handPoints.forEach(p => p.visible = false);
+        }
+    }, (error) => {
+        console.error("Error al leer datos remotos:", error);
+        statusElement.textContent = `ERROR DE CONEXIÓN.`;
+    });
+}
+
+/**
+ * [RECEPTOR / EMISOR] Aplica la lógica de mapeo (solo se usa para recibir datos remotos).
+ */
 function updateModelAndHandVisualization(landmarks) {
-    if (!model || handPoints.length === 0) return;
+    if (!model || handPoints.length === 0 || !landmarks) return;
+
+    // En el modo receptor (PC), desactivamos OrbitControls si se activa el control remoto
+    if (controls) controls.enabled = false;
 
     // --- A. Mapeo de Posición para el Modelo (Control) ---
     const indexFingerTip = landmarks[8];
@@ -203,12 +304,11 @@ function updateModelAndHandVisualization(landmarks) {
     landmarks.forEach((landmark, index) => {
         const pointMesh = handPoints[index];
         
-        // Mapeo de posición X e Y (igual que el modelo)
+        // Mapeo de posición X e Y 
         const pointX = landmark.x * 10 - 5; 
         const pointY = (1 - landmark.y) * 10 - 5;
         
-        // *** SOLUCIÓN A: Ajustar la Z para que los puntos sean visibles (adelante del modelo) ***
-        // Hacemos que la Z sea más grande para aparecer más cerca de la cámara (Z positiva)
+        // Ajuste de profundidad (Z)
         const pointZ = (landmark.z * -5) + 2; 
         
         pointMesh.position.set(pointX, pointY, pointZ); 
@@ -223,34 +323,65 @@ function updateModelAndHandVisualization(landmarks) {
 
 function startApp(mode) {
     currentMode = mode;
-    
-    document.getElementById('startScreen').style.display = 'none';
+    const sessionIdInput = document.getElementById('sessionIdInput');
+    let sessionId = sessionIdInput.value.trim().toUpperCase();
+    const statusElement = document.getElementById('sessionStatus');
 
-    // 1. Inicializa Three.js si es la primera vez
+    // Inicializa Three.js si es la primera vez
     if (!renderer) {
         initThreeJs();
     }
     
+    // 1. Configuración del documento de sesión
+    const appId = 'dual-controller-ar'; 
+    // Usamos 'public/data' para que cualquier usuario pueda leer/escribir si tiene el ID de sesión
+    const sessionCollection = collection(db, 'artifacts', appId, 'public', 'data', 'sessions');
+
+    // 2. Lógica de inicio
     if (mode === 'camera') {
-        // MODO CÁMARA (Control de Manos)
-        setupCamera(); // Esto activa el video y MediaPipe
+        // MODO EMISOR (TELÉFONO)
         
-        if(controls){
-            controls.enabled = false;
+        // Si no hay código ingresado, crea uno nuevo. Si lo hay, úsalo.
+        if (sessionId.length !== 6) {
+             sessionId = generateSessionId(); 
+            // setDoc creará el documento con el ID generado
+            sessionRef = doc(sessionCollection, sessionId);
+            statusElement.textContent = `CREANDO SESIÓN: ${sessionId}. CÁRGALA EN TU PC.`;
+            
+            // Mostrar el código al usuario
+            setTimeout(() => { alert(`Tu código de sesión es: ${sessionId}. Cárgalo en tu PC.`); }, 500);
+        } else {
+             // Usa la sesión ingresada
+            sessionRef = doc(sessionCollection, sessionId);
+            statusElement.textContent = `USANDO SESIÓN: ${sessionId}.`;
         }
+        
+        document.getElementById('startScreen').style.display = 'none';
+        setupCamera(); // Activa la cámara y MediaPipe (emisión)
+        
+        if(controls) controls.enabled = false;
 
     } else if (mode === 'canvas') {
-        // MODO SOLO LIENZO 3D (Control con Ratón)
+        // MODO RECEPTOR (PC)
         
-        // Ocultar la cámara
-        document.getElementById('videoElement').style.display = 'none';
-        
-        if(controls){
-            controls.enabled = true;
+        if (sessionId.length !== 6) {
+            alert("Debes ingresar un código de sesión de 6 dígitos para conectar la PC.");
+            return;
         }
 
-        // Configurar fondo sólido y ocultar las manos
+        sessionRef = doc(sessionCollection, sessionId);
+        
+        document.getElementById('startScreen').style.display = 'none';
+        
+        // Configura la visualización
+        document.getElementById('videoElement').style.display = 'none';
         renderer.setClearColor(0x333333, 1);
         handPoints.forEach(p => p.visible = false);
+        
+        // Habilita OrbitControls (se usará si el control remoto está inactivo)
+        if(controls) controls.enabled = true;
+
+        // Inicia el listener remoto (recepción)
+        setupRemoteListener();
     }
 }
