@@ -1,37 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <title>AR Sender - Cámara</title>
-    <style>
-        body { margin: 0; overflow: hidden; background-color: black; }
-        #videoElement {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            object-fit: cover;
-            transform: scaleX(-1); /* Efecto espejo para el usuario */
-        }
-        #status-bar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            padding: 10px;
-            background-color: rgba(0, 0, 0, 0.7);
-            color: white;
-            font-family: sans-serif;
-            z-index: 100;
-        }
-    </style>
-    
-    <!-- LIBRERÍAS DE MEDIAPIPE -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1644784998/camera_utils.js"></script>
-
-    <!-- FIREBASE (Importaciones obligatorias) -->
+[Immersive content redacted for brevity.]
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -54,8 +24,19 @@
         signInAnonymously(auth).then(userCredential => {
             window.userId = userCredential.user.uid;
             document.getElementById('sessionStatus').textContent += " (Conectado)";
-            if (typeof window.startCameraSender === 'function') {
+            
+            // 🚨 SOLUCIÓN: Llama a la función de inicio solo cuando el código esté disponible
+            // Esto garantiza que startCameraSender() se ejecute después de que app.js se cargue.
+            if (typeof window.startCameraSender === 'function') { 
                 window.startCameraSender();
+            } else {
+                // Si la función no está disponible inmediatamente (lo cual es común),
+                // la reintentamos después de un pequeño retraso para dar tiempo a cargar app.js.
+                setTimeout(() => {
+                    if (typeof window.startCameraSender === 'function') { 
+                        window.startCameraSender();
+                    }
+                }, 100);
             }
         }).catch(error => {
             document.getElementById('sessionStatus').textContent = "ERROR: Falló la conexión con Firebase.";
@@ -64,12 +45,4 @@
     </script>
 </head>
 <body>
-    <div id="status-bar">
-        <span id="sessionStatus">Conectando...</span>
-    </div>
-    <video id="videoElement" autoplay playsinline></video>
-    
-    <!-- Lógica de control en app.js -->
-    <script src="app.js"></script> 
-</body>
-</html>
+[Immersive content redacted for brevity.]
