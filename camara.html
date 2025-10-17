@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>AR Sender - Cámara</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: black; }
+        #videoElement {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            transform: scaleX(-1); /* Efecto espejo para el usuario */
+        }
+        #status-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            font-family: sans-serif;
+            z-index: 100;
+        }
+    </style>
+    
+    <!-- LIBRERÍAS DE MEDIAPIPE -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1644784998/camera_utils.js"></script>
+
+    <!-- FIREBASE (Importaciones obligatorias) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Exportar funciones clave al ámbito global (window)
+        window.doc = doc;
+        window.setDoc = setDoc;
+        window.collection = collection;
+
+        // Variables globales del entorno
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+        // Inicialización y autenticación
+        const app = initializeApp(firebaseConfig);
+        window.db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        signInAnonymously(auth).then(userCredential => {
+            window.userId = userCredential.user.uid;
+            document.getElementById('sessionStatus').textContent += " (Conectado)";
+            if (typeof window.startCameraSender === 'function') {
+                window.startCameraSender();
+            }
+        }).catch(error => {
+            document.getElementById('sessionStatus').textContent = "ERROR: Falló la conexión con Firebase.";
+            console.error("Error al autenticar en Firebase:", error);
+        });
+    </script>
+</head>
+<body>
+    <div id="status-bar">
+        <span id="sessionStatus">Conectando...</span>
+    </div>
+    <video id="videoElement" autoplay playsinline></video>
+    
+    <!-- Lógica de control en app.js -->
+    <script src="app.js"></script> 
+</body>
+</html>
