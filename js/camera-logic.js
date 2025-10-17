@@ -128,8 +128,10 @@ const camera = new Camera(videoElement, {
 
 
 if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+    console.log("DEBUG: intentando acceder a la cámara...");
     navigator.mediaDevices.getUserMedia({video: true})
         .then(function(stream){ 
+            console.log("DEBUG: ¡Éxito! Stream de video obtenido.");
             videoElement.srcObject = stream;
             videoElement.onloadedmetadata = () => {
                 videoElement.play();
@@ -149,6 +151,7 @@ if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
             alert("No se pudo acceder a la cámara. Por favor, verifica los permisos y que la cámara esté conectada.");
         });   
 }else{
+    console.error("DEBUG CRÍTICO: Fallo en getUserMedia. Error:", err.name, err);
     alert("tu navegador no soporta la API de la cámara");
 }
 
