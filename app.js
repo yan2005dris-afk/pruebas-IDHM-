@@ -9,11 +9,8 @@ let hands;
 let cameraUtil;
 let handLandmarks = [];
 let handPoints = []; // Mallas 3D para visualizar los 21 puntos de la mano
-let currentMode = 'canvas'; // Variable para rastrear el modo actual
-
-let handPoints = []; 
 let currentMode = 'canvas'; 
-let controls; // Nueva variable para OrbitControls
+let controls; // Control de ratón (OrbitControls)
 
 // ===================================
 // 1. CONFIGURACIÓN MEDIAPIPE
@@ -72,7 +69,7 @@ function setupCamera() {
                 videoElement.onloadedmetadata = function() {
                     videoElement.play();
                     // Inicializamos Three.js, que ahora sí tendrá el video de fondo
-                    initThreeJs();
+                    if(!renderer) initThreeJs();
 
                     // Inicializar CameraUtil para enviar fotogramas a MediaPipe
                     cameraUtil = new Camera(videoElement, {
@@ -146,15 +143,17 @@ function initThreeJs() {
         }
     );
 
-    // Inicializar los puntos 3D para la visualización de la mano
-    setupHandVisualization();
+    
     
     // 🌟 NUEVO: Inicializar OrbitControls 🌟
     controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true; // Efecto de inercia más suave
     controls.dampingFactor = 0.05;
     controls.screenSpacePanning = false;
-
+    
+    // Inicializar los puntos 3D para la visualización de la mano
+    setupHandVisualization();
+    
     // Iniciar el bucle de renderizado
     window.addEventListener('resize', onWindowResize, false);
     animate();
@@ -211,7 +210,7 @@ function updateModelAndHandVisualization(landmarks) {
     landmarks.forEach((landmark, index) => {
         const pointMesh = handPoints[index];
 
-        const pointX = (1 - landmark.x) * 10 - 5;
+        const pointX = landmark.x * 10 - 5;
         const pointY = (1 - landmark.y) * 10 - 5;
         const pointZ = landmark.z * -10;
 
@@ -235,9 +234,9 @@ function startApp(mode) {
     
     // Oculta la pantalla de inicio
     document.getElementById('startScreen').style.display = 'none';
-
-    // Asegúrate de que el canvas 3D esté visible
-    document.getElementById('threeCanvas').style.display = 'block';
+    if(!renderer) {
+        initThreeJs();
+    }
     
     if (mode === 'camera') {
         // MODO CÁMARA/CONTROL
@@ -248,22 +247,20 @@ function startApp(mode) {
         if(controls){
             controls.enabled = false;
         }
+        renderer.setClearAlpha(0);
+        renderer.domElement.style.background = 'transparent';
     } else if (mode === 'canvas') {
         // MODO SOLO LIENZO 3D
         // Solo inicializa Three.js (sin el video de fondo ni MediaPipe activo)
-        if(!renderer){
-            initThreeJs();
-        }
+        document.getElementById('videoElement').style.display = 'none';
+        
 
         if(controls){
             controls.enabled = true;
         }
-
+        
+        renderer.setClearColor(0x333333, 1);
         handPoints.forEach(p => p.visible = false);
-
-        if(renderer){
-            renderer.setClearColor(0x333333, 1);
-        }
         
     }
 }
