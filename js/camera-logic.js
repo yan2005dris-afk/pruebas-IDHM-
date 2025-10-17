@@ -47,7 +47,7 @@ function onResults (results) {
                 y: indexTip.y,
                 //is_pinching es un booleano que indica si el usuario esta haciendo el gesto de pinza
 
-                is_pinching: isPiching(handLandmarks)
+                is_pinching: isPinching(handLandmarks)
             };
             //windows es el objeto global del navegador
             //sendGestureData es una funcion definida en 
@@ -63,7 +63,7 @@ function onResults (results) {
 
 
     //funcion axuiliar simple para detectar si el pulgar y el indice estan cerca
-    function isPiching(landmarks){
+    function isPinching(landmarks){
         //tumbTip es la punta del dedo pulgar
         const thumbTip = landmarks[4];
         //indexTip es la punta del dedo indice
