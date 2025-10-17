@@ -4,41 +4,94 @@
     <meta charset="UTF-8">
     <title>GLB AR Viewer</title>
     <style>
-        /* ... (Tus estilos CSS existentes) ... */
+        body { margin: 0; overflow: hidden; font-family: sans-serif; }
+
+        /* Estilos para el video y el canvas 3D */
+        #videoElement, #threeCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            display: none; 
+        }
+        #threeCanvas {
+            z-index: 10;
+            background: transparent;
+        }
+
+        /* Estilos para la Pantalla de Inicio (Overlay) */
+        #startScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            color: white;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
         .session-group {
             margin-top: 20px;
             display: flex;
             flex-direction: column;
             align-items: center;
+            width: 90%;
+            max-width: 300px;
         }
-        .session-group input, .session-group button {
+        .session-group input {
             padding: 10px;
             margin: 5px;
             border-radius: 5px;
             border: 1px solid #ccc;
             font-size: 1em;
-            width: 90%;
-            max-width: 300px;
+            width: 100%;
             color: #333;
+            text-align: center;
         }
         .option-button {
-            /* ... (Tus estilos existentes) ... */
-            margin-top: 20px; /* Separación de la sesión */
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            margin: 10px;
+            font-size: 1.2em;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+            width: 100%;
+        }
+
+        .option-button:hover {
+            background-color: #0056b3;
         }
     </style>
     
-    <!-- LIBRERÍAS DE 3D y MEDIAPIPE (Mantenidas) -->
+    <!-- LIBRERÍAS DE 3D y MEDIAPIPE -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1644784998/camera_utils.js"></script>
 
-    <!-- FIREBASE (AGREGADO) -->
+    <!-- FIREBASE (AGREGADO Y CORREGIDO para exportar funciones) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, collection, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Exportar funciones clave al ámbito global para que app.js pueda usarlas
+        window.doc = doc;
+        window.setDoc = setDoc;
+        window.onSnapshot = onSnapshot;
+        window.collection = collection;
 
         // Variables globales del entorno (obligatorias)
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -52,7 +105,7 @@
         signInAnonymously(auth).then(userCredential => {
             window.userId = userCredential.user.uid;
             console.log("Firebase Auth iniciado con UID:", window.userId);
-            // Si la aplicación se inicia después de la autenticación
+            // Indica a app.js que Firebase está listo
             if (typeof window.onFirebaseReady === 'function') {
                 window.onFirebaseReady();
             }
@@ -82,11 +135,11 @@
 
     </div>
 
-    <!-- ... (Video y contenedor existentes) ... -->
+    <!-- Elementos de la App -->
     <video id="videoElement" autoplay playsinline></video>
     <div id="container"></div> 
     
-    <!-- Mueve el script al final del body para asegurar la carga global -->
+    <!-- SCRIPT PRINCIPAL AL FINAL DEL BODY -->
     <script src="app.js"></script>
 </body>
 </html>

@@ -20,7 +20,7 @@ let sessionRef = null; // Referencia al documento de sesión en Firestore
 // UTILERÍAS FIREBASE Y MEDIAPIPE
 // ===================================
 
-// Función que se ejecuta cuando Firebase está listo
+// Función que se ejecuta cuando Firebase está listo (llamada desde el HTML)
 window.onFirebaseReady = () => {
     // Asigna las variables globales exportadas por el script module de Firebase en el HTML
     db = window.db;
@@ -60,7 +60,7 @@ function onResults(results) {
 
 
 // ===================================
-// 2. ACCESO A LA CÁMARA (Modo 'camera')
+// 2. ACCESO A LA CÁMARA
 // ===================================
 
 function setupCamera() {
@@ -70,14 +70,13 @@ function setupCamera() {
     videoElement.style.display = 'block';
 
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        // Usa 'environment' para la cámara trasera (AR)
         navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
             .then(function(stream) {
                 videoElement.srcObject = stream;
                 videoElement.onloadedmetadata = function() {
                     videoElement.play();
                     
-                    // Asegurar que el canvas 3D esté oculto en modo EMISOR
+                    // Asegurar que el canvas 3D esté oculto en modo EMISOR (Teléfono)
                     const threeCanvas = document.getElementById('threeCanvas');
                     if (threeCanvas) threeCanvas.style.display = 'none';
 
@@ -142,7 +141,7 @@ function initThreeJs() {
         'assets/modelo.glb', 
         function (gltf) {
             model = gltf.scene;
-            model.scale.set(0.5, 0.5, 0.5); // Escala corregida
+            model.scale.set(0.5, 0.5, 0.5); 
             model.position.set(0, 0, 0); 
             scene.add(model);
         },
@@ -209,7 +208,7 @@ function animate() {
 function emitHandData(landmarks) {
     if (!sessionRef) return;
     
-    const setDoc = window.setDoc; // Accede a la función exportada desde el HTML
+    const setDoc = window.setDoc; 
     if (!setDoc) return; 
 
     let data;
@@ -238,7 +237,7 @@ function setupRemoteListener() {
     const statusElement = document.getElementById('sessionStatus');
     statusElement.textContent = `ESCUCHANDO SESIÓN: ${sessionRef.id}`;
     
-    const onSnapshot = window.onSnapshot; // Accede a la función exportada desde el HTML
+    const onSnapshot = window.onSnapshot; 
 
     if (!onSnapshot) {
         statusElement.textContent = "ERROR: Firebase no conectado.";
