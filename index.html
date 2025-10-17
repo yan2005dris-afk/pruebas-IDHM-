@@ -2,62 +2,14 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Selector de Modo AR Remoto</title>
-    <style>
-        body { margin: 0; overflow: hidden; font-family: sans-serif; background-color: #f4f4f4; color: #333; height: 100vh; display: flex; justify-content: center; align-items: center; }
-        .container { background-color: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); text-align: center; max-width: 400px; width: 90%; }
-        h1 { color: #007bff; margin-bottom: 20px; }
-        .session-group input { padding: 10px; margin: 5px 0 15px 0; border-radius: 5px; border: 1px solid #ccc; font-size: 1em; width: 100%; text-align: center; box-sizing: border-box; }
-        .option-button { background-color: #007bff; color: white; border: none; padding: 15px 30px; margin: 10px 0; font-size: 1.1em; cursor: pointer; border-radius: 5px; transition: background-color 0.3s; width: 100%; }
-        .option-button:hover { background-color: #0056b3; }
-    </style>
+    <title>Menú Principal</title>
 </head>
 <body>
-    <div class="container">
-        <h1>Control Remoto de Modelo 3D</h1>
-        <p>Selecciona si este dispositivo enviará (Teléfono) o recibirá (PC) los gestos de control.</p>
-        
-        <div class="session-group">
-            <input type="text" id="sessionIdInput" placeholder="Ingresa Código de Sesión (6 dígitos)" maxlength="6">
-            <button class="option-button" onclick="startApp('camera')">
-                📲 Usar Teléfono (Enviar Gestos)
-            </button>
-            <button class="option-button" onclick="startApp('canvas')">
-                💻 Usar PC (Recibir y Mostrar Lienzo)
-            </button>
-        </div>
-        
-        <p id="sessionStatus" style="color: #666; margin-top: 15px;">Esperando selección...</p>
-    </div>
+    <h1>Control de Interfaz con Gestos</h1>
+    <p>Selecciona una opción para comenzar:</p>
+    <a href="camera.html"><button>Abrir Cámara (Detector de Gestos)</button></a>
+    <a href="lienzo.html"><button>Abrir Lienzo (Receptor Visual)</button></a>
 
-    <script>
-        function generateSessionId() {
-            return Math.random().toString(36).substring(2, 8).toUpperCase();
-        }
 
-        function startApp(mode) {
-            let sessionId = document.getElementById('sessionIdInput').value.trim().toUpperCase();
-            const statusElement = document.getElementById('sessionStatus');
-
-            if (mode === 'camera') {
-                // MODO EMISOR: Generar código si no se ingresó
-                if (sessionId.length !== 6) {
-                    sessionId = generateSessionId();
-                    alert(`Tu nuevo código de sesión es: ${sessionId}. Ingrésalo en el PC.`);
-                }
-                statusElement.textContent = `Redirigiendo a modo cámara con sesión: ${sessionId}`;
-                window.location.href = `camera.html?session=${sessionId}`;
-
-            } else if (mode === 'canvas') {
-                // MODO RECEPTOR: Requiere código
-                if (sessionId.length !== 6) {
-                    alert("Debes ingresar un código de sesión de 6 dígitos para conectar la PC.");
-                    return;
-                }
-                statusElement.textContent = `Redirigiendo a modo lienzo con sesión: ${sessionId}`;
-                window.location.href = `lienzo.html?session=${sessionId}`;
-            }
-        }
-    </script>
 </body>
 </html>
