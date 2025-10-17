@@ -62,7 +62,7 @@ function setupCamera() {
 
     // Pide acceso a la cámara
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
             .then(function(stream) {
                 videoElement.srcObject = stream;
                 videoElement.onloadedmetadata = function() {
@@ -187,7 +187,7 @@ function updateModelAndHandVisualization(landmarks) {
 
     // --- A. Mapeo de Posición para el Modelo (Control) ---
     const indexFingerTip = landmarks[8];
-    const mappedX = (1 - indexFingerTip.x) * 10 - 5;
+    const mappedX = indexFingerTip.x * 10 - 5;
     const mappedY = (1 - indexFingerTip.y) * 10 - 5;
 
     model.position.x = mappedX;
