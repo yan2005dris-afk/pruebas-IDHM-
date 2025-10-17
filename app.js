@@ -129,7 +129,7 @@ function initThreeJs() {
     // Cargar el Modelo .glb
     const loader = new THREE.GLTFLoader();
     loader.load(
-        'assets/models/mi_modelo.glb', // ¡CAMBIA ESTA RUTA!
+        'assets/modelo.glb', // ¡CAMBIA ESTA RUTA!
         function (gltf) {
             model = gltf.scene;
             model.scale.set(1, 1, 1);
