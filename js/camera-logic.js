@@ -1,4 +1,4 @@
-const videoElement = document.getElementById('video');
+const videoElement = document.getElementById('videoElement'); 
 const canvasElement = document.getElementById('canvasElement');
 const canvasCtx = canvasElement.getContext('2d');
 
