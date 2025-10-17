@@ -1,7 +1,7 @@
 
 //se cambia la URL del servidor por la del servidor RENDER/HEROKU
 //para desarollo local, se usa:
-const SOCKET_SERVER_URL = 'http://localhost:3000';
+const SOCKET_SERVER_URL = 'https://gesture-server-io-622757152775.us-central1.run.app';
 
 //INICIALIZA LA CONEXION CON EL SERVIDOR DE GESTOS
 const socket = io(SOCKET_SERVER_URL);

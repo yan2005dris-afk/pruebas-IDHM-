@@ -1,0 +1,23 @@
+# gesture-server/Dockerfile
+
+# 1. Usa la imagen oficial de Node.js como base
+FROM node:20
+
+# 2. Establece el directorio de trabajo dentro del contenedor
+WORKDIR /usr/src/app
+
+# 3. Copia los archivos de configuración de dependencias
+COPY package*.json ./
+
+# 4. Instala las dependencias de Node.js
+RUN npm install
+
+# 5. Copia todo el código fuente restante de tu proyecto
+COPY . .
+
+# 6. Cloud Run sirve en el puerto 8080 por defecto.
+# Asegúrate de que tu server.js usa process.env.PORT o 8080 como fallback.
+EXPOSE 8080 
+
+# 7. Define el comando que se ejecuta al iniciar el contenedor
+CMD [ "npm", "start" ]

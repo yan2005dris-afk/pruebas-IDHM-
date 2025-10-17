@@ -10,7 +10,7 @@ const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
         // En producción, aquí debería ir la URL específica de tu GitHub Pages.
-        origin: "*", 
+        origin: "https://yan2005dris-afk.github.io", 
         methods: ["GET", "POST"]
     }
 });
