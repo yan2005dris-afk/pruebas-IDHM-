@@ -236,15 +236,35 @@ function startApp(mode) {
     // Oculta la pantalla de inicio
     document.getElementById('startScreen').style.display = 'none';
 
+    // Asegúrate de que el canvas 3D esté visible
+    document.getElementById('threeCanvas').style.display = 'block';
+    
     if (mode === 'camera') {
         // MODO CÁMARA/CONTROL
         // setupCamera() se encargará de inicializar MediaPipe, la cámara y luego Three.js
+        document.getElementById('videoElement').style.display = 'block';
         setupCamera();
 
+        if(controls){
+            controls.enabled = false;
+        }
     } else if (mode === 'canvas') {
         // MODO SOLO LIENZO 3D
         // Solo inicializa Three.js (sin el video de fondo ni MediaPipe activo)
-        initThreeJs();
+        if(!renderer){
+            initThreeJs();
+        }
+
+        if(controls){
+            controls.enabled = true;
+        }
+
+        handPoints.forEach(p => p.visible = false);
+
+        if(renderer){
+            renderer.setClearColor(0x333333, 1);
+        }
+        
     }
 }
 
