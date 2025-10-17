@@ -7,7 +7,19 @@ const canvasCtx = canvasElement.getContext('2d');
  * Inicializacion de mediapipe y video
  * 
  */
-
+//funcion axuiliar simple para detectar si el pulgar y el indice estan cerca
+    function isPinching(landmarks){
+        //tumbTip es la punta del dedo pulgar
+        const thumbTip = landmarks[4];
+        //indexTip es la punta del dedo indice
+        const indexTip = landmarks[8];
+        //usamos una disntancia euclidiana simple en 2D para determinar si los dedos estan cerca
+        const distance = Math.sqrt(
+            Math.pow(thumbTip.x - indexTip.x, 2) +
+            Math.pow(thumbTip.y - indexTip.y, 2)
+        );
+        return distance < 0.05; //umbral para considerar que estan haciendo pinza
+    }
 
 /**
  * Funcion llamada cuadno mediapipe procesa un nuevo frame
@@ -61,21 +73,6 @@ function onResults (results) {
     //el .restore() restaura el estado del canvas guardado con .save()
     canvasCtx.restore();
 
-
-    //funcion axuiliar simple para detectar si el pulgar y el indice estan cerca
-    function isPinching(landmarks){
-        //tumbTip es la punta del dedo pulgar
-        const thumbTip = landmarks[4];
-        //indexTip es la punta del dedo indice
-        const indexTip = landmarks[8];
-        //usamos una disntancia euclidiana simple en 2D para determinar si los dedos estan cerca
-        const distance = Math.sqrt(
-            Math.pow(thumbTip.x - indexTip.x, 2) +
-            Math.pow(thumbTip.y - indexTip.y, 2)
-        );
-        return distance < 0.05; //umbral para considerar que estan haciendo pinza
-    }
-
 /**
  * 3.- INICIO DE STREAMING Y CONFIGURACION
  */
@@ -110,7 +107,7 @@ hands.onResults(onResults);
 //se accede a la camara del usuario usando la API de getUserMedia
 //y se inicia el streaming de video
 //nueva instancia de la camara de mediapipe recibe el elemento de video y las configuraciones
-const camera = new Camera(videoElement, {
+/*const camera = new Camera(videoElement, {
     //onFrame es una funcion que se llama en cada frame del video
     //async porque hands.send es una funcion asincrona, y esto significa que 
     // puede tomar tiempo procesar el frame y no bloquear el hilo principal
@@ -125,7 +122,7 @@ const camera = new Camera(videoElement, {
     width:640,
     height:480
 });
-
+*/
 
 if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
     console.log("DEBUG: intentando acceder a la cámara...");
@@ -153,7 +150,7 @@ if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
             alert(`Error de Cámara: ${err.name}. Tu navegador no solicitará permisos.`);
         });   
 }else{
-    console.error("DEBUG CRÍTICO: Fallo en getUserMedia. Error:", err.name, err);
+    console.error("CÁMARA CRÍTICO: El navegador no soporta la API getUserMedia.");
     alert("tu navegador no soporta la API de la cámara");
 }
 
