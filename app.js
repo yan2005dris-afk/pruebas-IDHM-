@@ -1,34 +1,41 @@
 // =======================================================
-// app.js: LÓGICA COMPARTIDA DE 3D, MEDIAPIPE Y FIREBASE
+// app.js: Lógica Compartida para Control Remoto GLB (Three.js, MediaPipe, Firestore)
+// Este script es cargado por camera.html y lienzo.html.
 // =======================================================
 
-// Variables globales
+// Variables globales para Three.js, MediaPipe y Firestore
+let videoElement;
 let scene, camera, renderer, model;
 let hands;
 let cameraUtil;
+let handLandmarks = [];
 let handPoints = []; 
 let controls; 
 
-let db; 
-let userId; 
-let sessionRef = null; 
-let currentMode = 'init'; // 'sender' o 'receiver'
+let db; // Instancia de Firebase Firestore (asignada en el HTML)
+let userId; // ID de usuario de Firebase (asignada en el HTML)
+let sessionRef = null; // Referencia al documento de sesión en Firestore
 
 // ===================================
-// UTILERÍAS DE INICIALIZACIÓN
+// UTILERÍAS DE APOYO
 // ===================================
 
+// Obtiene el ID de sesión de la URL (usado por camera.html y lienzo.html)
 function getSessionIdFromUrl() {
-    // Obtiene el ID de sesión de la URL (ej: camera.html?session=ABCD12)
     const params = new URLSearchParams(window.location.search);
-    return params.get('session');
+    return params.get('session') || null;
+}
+
+// Genera un código de sesión de 6 dígitos
+function generateSessionId() {
+    return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
 // ===================================
-// LÓGICA DE MEDIAPIPE/CÁMARA (SENDER)
+// LÓGICA MEDIAPIPE (EMISOR)
 // ===================================
 
-function initMediaPipe(onResultsHandler) {
+function initMediaPipe() {
     hands = new Hands({
         locateFile: (file) => {
             return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
@@ -40,38 +47,89 @@ function initMediaPipe(onResultsHandler) {
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
     });
-    hands.onResults(onResultsHandler);
+    hands.onResults(onResults);
 }
 
-function setupCamera(videoElement, onFrameHandler) {
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        // Usa 'environment' para la cámara trasera (AR)
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-            .then(function(stream) {
-                videoElement.srcObject = stream;
-                videoElement.onloadedmetadata = function() {
-                    videoElement.play();
-                    
-                    cameraUtil = new Camera(videoElement, {
-                        onFrame: onFrameHandler,
-                        width: videoElement.videoWidth,
-                        height: videoElement.videoHeight
-                    });
-                    cameraUtil.start();
-                };
-            })
-            .catch(function(error) {
-                console.error("Error al acceder a la cámara: ", error);
-                document.getElementById('sessionStatus').textContent = "ERROR: Necesita permisos de cámara.";
-            });
+function onResults(results) {
+    // Si la mano es detectada, se envían los datos
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        emitHandData(results.multiHandLandmarks[0]);
     } else {
-        document.getElementById('sessionStatus').textContent = "ERROR: Navegador no soporta cámara.";
+        // Si no hay mano, se envía una señal de inactividad
+        emitHandData(null);
     }
 }
 
 
 // ===================================
-// 3D & MANIPULACIÓN (RECEIVER)
+// EMISIÓN Y RECEPCIÓN DE DATOS
+// ===================================
+
+/**
+ * [EMISOR] Envía los datos de la mano a Firestore.
+ */
+function emitHandData(landmarks) {
+    if (!sessionRef) return;
+    
+    const setDoc = window.setDoc; 
+    if (!setDoc) return; 
+
+    let data;
+    if (landmarks) {
+        // Simplificar los landmarks para reducir el tamaño del documento de Firestore
+        const simplifiedLandmarks = landmarks.map(l => ({ x: l.x, y: l.y, z: l.z }));
+        data = {
+            landmarks: simplifiedLandmarks,
+            timestamp: Date.now(),
+            active: true
+        };
+    } else {
+        data = { active: false, timestamp: Date.now() };
+    }
+
+    setDoc(sessionRef, data, { merge: true }).catch(error => {
+        console.error("Error al escribir en Firestore:", error);
+    });
+}
+
+/**
+ * [RECEPTOR] Configura un listener para recibir datos de la mano.
+ */
+function setupRemoteListener() {
+    if (!sessionRef) return;
+    
+    const statusElement = document.getElementById('sessionStatus');
+    const onSnapshot = window.onSnapshot;
+
+    if (!onSnapshot) {
+        statusElement.textContent = "ERROR: Firebase no cargado.";
+        return;
+    }
+
+    onSnapshot(sessionRef, (docSnapshot) => {
+        if (docSnapshot.exists()) {
+            const data = docSnapshot.data();
+
+            if (data.active && data.landmarks) {
+                statusElement.textContent = `CONTROL REMOTO ACTIVO: ${sessionRef.id}`;
+                updateModelAndHandVisualization(data.landmarks);
+            } else {
+                statusElement.textContent = `ESPERANDO GESTO REMOTO: ${sessionRef.id}`;
+                // Ocultar la visualización de la mano cuando no hay datos
+                handPoints.forEach(p => p.visible = false);
+            }
+        } else {
+            statusElement.textContent = `SESIÓN ${sessionRef.id} NO ENCONTRADA.`;
+            handPoints.forEach(p => p.visible = false);
+        }
+    }, (error) => {
+        console.error("Error al leer datos remotos:", error);
+        statusElement.textContent = `ERROR DE CONEXIÓN.`;
+    });
+}
+
+// ===================================
+// LÓGICA THREE.JS (RECEPTOR)
 // ===================================
 
 function initThreeJs() {
@@ -79,10 +137,13 @@ function initThreeJs() {
     const width = window.innerWidth;
     const height = window.innerHeight;
 
+    if (renderer) return; 
+    
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
     camera.position.z = 5;
 
+    // En el modo lienzo, el fondo siempre es sólido (alpha: false)
     renderer = new THREE.WebGLRenderer({
         antialias: true,
         alpha: false 
@@ -90,7 +151,7 @@ function initThreeJs() {
     renderer.setSize(width, height);
     renderer.domElement.id = 'threeCanvas'; 
     container.appendChild(renderer.domElement);
-    renderer.setClearColor(0x333333, 1); // Fondo sólido para el lienzo
+    renderer.setClearColor(0x333333, 1);
 
     // Luces
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));
@@ -111,6 +172,7 @@ function initThreeJs() {
         undefined, 
         function (error) {
             console.error('Error cargando el modelo GLB', error);
+            document.getElementById('sessionStatus').textContent = "ERROR: No se pudo cargar el modelo 3D.";
         }
     );
 
@@ -119,7 +181,7 @@ function initThreeJs() {
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     controls.screenSpacePanning = false;
-    controls.enabled = true; // Activo por defecto en el lienzo
+    controls.enabled = true; // Control de ratón activo por defecto
 
     setupHandVisualization();
     
@@ -152,91 +214,30 @@ function onWindowResize() {
 function animate() {
     requestAnimationFrame(animate);
 
-    if (currentMode === 'receiver' && controls && controls.enabled) {
-        // Si el control remoto está inactivo, permite OrbitControls
+    if (controls && controls.enabled) {
         controls.update();
-    } else if (currentMode === 'receiver' && model && !controls.enabled) {
-        // En modo remoto, si el modelo está quieto, podemos añadir una rotación si no hay gestos
-        // model.rotation.y += 0.005; // Opcional: rotación automática cuando el control remoto no está activo.
     }
     renderer.render(scene, camera);
 }
 
 
 // ===================================
-// FIREBASE - EMISIÓN Y RECEPCIÓN
+// MAPEO DE COORDENADAS (RECEPTOR)
 // ===================================
 
-// Función de callback de MediaPipe para enviar datos
-function onSenderResults(results) {
-    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        emitHandData(results.multiHandLandmarks[0]);
-    } else {
-        emitHandData(null);
-    }
-}
-
-function emitHandData(landmarks) {
-    if (!sessionRef) return;
-    
-    const setDoc = window.setDoc; 
-    if (!setDoc) return; 
-
-    let data;
-    if (landmarks) {
-        const simplifiedLandmarks = landmarks.map(l => ({ x: l.x, y: l.y, z: l.z }));
-        data = {
-            landmarks: simplifiedLandmarks,
-            timestamp: Date.now(),
-            active: true
-        };
-    } else {
-        data = { active: false, timestamp: Date.now() };
-    }
-
-    setDoc(sessionRef, data, { merge: true }).catch(error => {
-        console.error("Error al escribir en Firestore:", error);
-    });
-}
-
-function setupRemoteListener() {
-    if (!sessionRef) return;
-    
-    const statusElement = document.getElementById('sessionStatus');
-    const onSnapshot = window.onSnapshot; 
-
-    if (!onSnapshot) return;
-
-    onSnapshot(sessionRef, (docSnapshot) => {
-        if (docSnapshot.exists()) {
-            const data = docSnapshot.data();
-
-            if (data.active && data.landmarks) {
-                statusElement.textContent = `SESIÓN ${sessionRef.id}: CONTROL ACTIVO`;
-                updateModelAndHandVisualization(data.landmarks);
-                controls.enabled = false; // Desactiva OrbitControls mientras haya gestos
-            } else {
-                statusElement.textContent = `SESIÓN ${sessionRef.id}: ESPERANDO MANO`;
-                handPoints.forEach(p => p.visible = false);
-                controls.enabled = true; // Activa OrbitControls si no hay gestos
-            }
-        } else {
-            statusElement.textContent = `SESIÓN ${sessionRef.id} NO ENCONTRADA o FINALIZADA.`;
-            handPoints.forEach(p => p.visible = false);
-            controls.enabled = true;
-        }
-    });
-}
-
 /**
- * Aplica la lógica de mapeo (solo se usa en modo RECEIVER).
+ * [RECEPTOR] Aplica la lógica de mapeo y muestra los puntos de la mano en 3D.
  */
 function updateModelAndHandVisualization(landmarks) {
     if (!model || handPoints.length === 0 || !landmarks) return;
 
-    // --- A. Mapeo de Posición para el Modelo (Control) ---
+    // Desactivar OrbitControls mientras se recibe el gesto remoto
+    if (controls) controls.enabled = false;
+
+    // --- A. Mapeo de Posición para el Modelo ---
     const indexFingerTip = landmarks[8];
     
+    // Mapeo sin inversión en X (cámara remota)
     const mappedX = indexFingerTip.x * 10 - 5; 
     const mappedY = (1 - indexFingerTip.y) * 10 - 5; 
 
@@ -247,8 +248,10 @@ function updateModelAndHandVisualization(landmarks) {
     landmarks.forEach((landmark, index) => {
         const pointMesh = handPoints[index];
         
+        // Mapeo sin inversión en X para los puntos
         const pointX = landmark.x * 10 - 5; 
         const pointY = (1 - landmark.y) * 10 - 5;
+        // Z ajustada para aparecer delante del modelo
         const pointZ = (landmark.z * -5) + 2; 
         
         pointMesh.position.set(pointX, pointY, pointZ); 
@@ -258,58 +261,66 @@ function updateModelAndHandVisualization(landmarks) {
 
 
 // ===================================
-// 5. FUNCIONES DE INICIO POR PÁGINA
+// FUNCIONES DE INICIO EXPORTADAS
 // ===================================
 
+/**
+ * Inicia la aplicación en modo EMISOR (Teléfono).
+ * Llamada por camera.html.
+ */
 window.startCameraSender = function() {
-    currentMode = 'sender';
-    db = window.db; 
-    
     const sessionId = getSessionIdFromUrl();
     const statusElement = document.getElementById('sessionStatus');
-
-    if (!sessionId) {
-        statusElement.textContent = "ERROR: Falta el ID de Sesión. Vuelve al inicio.";
-        return;
-    }
     
     const docFn = window.doc;
     const collectionFn = window.collection;
+
+    if (!db || !docFn || !collectionFn) {
+        statusElement.textContent = "ERROR: Dependencias de Firebase no cargadas.";
+        return;
+    }
+    
     const appId = 'dual-controller-ar'; 
     const sessionCollection = collectionFn(db, 'artifacts', appId, 'public', 'data', 'sessions');
-    sessionRef = docFn(sessionCollection, sessionId);
 
-    statusElement.textContent = `SENDER: SESIÓN ACTIVA (${sessionId}). Detectando mano...`;
-    
-    const videoElement = document.getElementById('videoElement');
-    videoElement.style.display = 'block';
-    
-    // Inicia MediaPipe con la función de emisión
-    initMediaPipe(onSenderResults);
-    setupCamera(videoElement, async () => { await hands.send({ image: videoElement }); });
+    if (sessionId) {
+        sessionRef = docFn(sessionCollection, sessionId);
+        statusElement.textContent = `EMISOR ACTIVO. Sesión: ${sessionId}`;
+        
+        initMediaPipe(); 
+        setupCamera(); // Activa la cámara y MediaPipe
+    } else {
+        statusElement.textContent = "ERROR: Falta el código de sesión en la URL.";
+    }
 };
 
 
+/**
+ * Inicia la aplicación en modo RECEPTOR (PC/Lienzo).
+ * Llamada por lienzo.html.
+ */
 window.startCanvasReceiver = function() {
-    currentMode = 'receiver';
-    db = window.db;
-    
     const sessionId = getSessionIdFromUrl();
     const statusElement = document.getElementById('sessionStatus');
 
-    if (!sessionId) {
-        statusElement.textContent = "ERROR: Falta el ID de Sesión. Vuelve al inicio.";
+    const docFn = window.doc;
+    const collectionFn = window.collection;
+
+    if (!db || !docFn || !collectionFn) {
+        statusElement.textContent = "ERROR: Dependencias de Firebase no cargadas.";
         return;
     }
 
-    initThreeJs();
-
-    const docFn = window.doc;
-    const collectionFn = window.collection;
     const appId = 'dual-controller-ar'; 
     const sessionCollection = collectionFn(db, 'artifacts', appId, 'public', 'data', 'sessions');
-    sessionRef = docFn(sessionCollection, sessionId);
 
-    statusElement.textContent = `RECEIVER: Conectando a sesión ${sessionId}...`;
-    setupRemoteListener();
+    if (sessionId) {
+        sessionRef = docFn(sessionCollection, sessionId);
+        statusElement.textContent = `RECEPTOR ACTIVO. Iniciando Lienzo...`;
+        
+        initThreeJs(); // Inicializa Three.js y OrbitControls
+        setupRemoteListener(); // Inicia la escucha de gestos
+    } else {
+        statusElement.textContent = "ERROR: Falta el código de sesión en la URL.";
+    }
 };

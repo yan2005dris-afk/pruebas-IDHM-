@@ -1,7 +1,40 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+    <meta charset="UTF-8">
+    <title>Cámara | Emisor de Gestos AR</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; color: white; font-family: sans-serif; }
+        #videoElement {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            /* La cámara trasera no necesita espejo, pero si se usa la frontal, se puede activar */
+            /* transform: scaleX(-1); */
+        }
+        #sessionStatus {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 8px 15px;
+            border-radius: 5px;
+            font-size: 0.9em;
+            color: #4caf50;
+        }
+    </style>
+    
+    <!-- LIBRERÍAS MEDIAPIPE -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1644784998/camera_utils.js"></script>
 
+    <!-- LIBRERÍAS FIREBASE (MODULE) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -12,7 +45,7 @@
         window.setDoc = setDoc;
         window.collection = collection;
 
-        // Variables globales del entorno
+        // Variables globales del entorno Canvas (proporcionadas por la plataforma)
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
 
@@ -23,15 +56,12 @@
         
         signInAnonymously(auth).then(userCredential => {
             window.userId = userCredential.user.uid;
-            document.getElementById('sessionStatus').textContent += " (Conectado)";
+            document.getElementById('sessionStatus').textContent = "SESIÓN REMOTA: Autenticado.";
             
-            // 🚨 SOLUCIÓN: Llama a la función de inicio solo cuando el código esté disponible
-            // Esto garantiza que startCameraSender() se ejecute después de que app.js se cargue.
+            // Llama a la función de inicio después de un pequeño retraso para asegurar la carga de app.js
             if (typeof window.startCameraSender === 'function') { 
                 window.startCameraSender();
             } else {
-                // Si la función no está disponible inmediatamente (lo cual es común),
-                // la reintentamos después de un pequeño retraso para dar tiempo a cargar app.js.
                 setTimeout(() => {
                     if (typeof window.startCameraSender === 'function') { 
                         window.startCameraSender();
@@ -43,6 +73,14 @@
             console.error("Error al autenticar en Firebase:", error);
         });
     </script>
+
 </head>
 <body>
-
+    <div id="sessionStatus">Conectando a Firebase...</div>
+    <!-- El video es el fondo, el MediaPipe lo usa para análisis -->
+    <video id="videoElement" autoplay playsinline></video>
+    
+    <!-- Lógica de la aplicación -->
+    <script src="app.js"></script> 
+</body>
+</html>

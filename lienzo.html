@@ -1,6 +1,38 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+    <meta charset="UTF-8">
+    <title>Lienzo | Receptor 3D Remoto</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #333333; }
+        #threeCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+        }
+        #sessionStatus {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 8px 15px;
+            border-radius: 5px;
+            font-size: 0.9em;
+            color: #333;
+        }
+    </style>
+    
+    <!-- LIBRERÍAS DE 3D -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <!-- LIBRERÍAS FIREBASE (MODULE) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -11,7 +43,7 @@
         window.onSnapshot = onSnapshot;
         window.collection = collection;
 
-        // Variables globales del entorno
+        // Variables globales del entorno Canvas (proporcionadas por la plataforma)
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
 
@@ -22,9 +54,9 @@
         
         signInAnonymously(auth).then(userCredential => {
             window.userId = userCredential.user.uid;
-            document.getElementById('sessionStatus').textContent += " (Conectado)";
+            document.getElementById('sessionStatus').textContent = "RECEIVER: Autenticado.";
             
-            // 🚨 SOLUCIÓN: Llama a la función de inicio después de que app.js esté disponible
+            // Llama a la función de inicio después de un pequeño retraso para asegurar la carga de app.js
             if (typeof window.startCanvasReceiver === 'function') { 
                 window.startCanvasReceiver();
             } else {
@@ -41,4 +73,10 @@
     </script>
 </head>
 <body>
-
+    <div id="sessionStatus">Conectando a Firebase...</div>
+    <div id="container"></div>
+    
+    <!-- Lógica de la aplicación -->
+    <script src="app.js"></script>
+</body>
+</html>
