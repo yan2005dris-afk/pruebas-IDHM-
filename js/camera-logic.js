@@ -147,8 +147,10 @@ if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
             };
 
         }).catch(function(err){
-            console.error("Ocurrió un error al acceder a la cámara: " + err);
+            console.error("CÁMARA CRÍTICO: Fallo al solicitar la cámara. Nombre del error:", err.name);
+            console.error("Detalles:", err);
             alert("No se pudo acceder a la cámara. Por favor, verifica los permisos y que la cámara esté conectada.");
+            alert(`Error de Cámara: ${err.name}. Tu navegador no solicitará permisos.`);
         });   
 }else{
     console.error("DEBUG CRÍTICO: Fallo en getUserMedia. Error:", err.name, err);
