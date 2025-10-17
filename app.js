@@ -63,7 +63,7 @@ function initThreeJs() {
     const loader = new THREE.GLTFLoader();
     // Reemplaza 'path/to/your/model.glb' con la ruta real de tu archivo
     loader.load(
-        'path/to/your/model.glb', 
+        'assets/models/mi_modelo.glb', 
         function (gltf) {
             model = gltf.scene;
             model.scale.set(1, 1, 1); // Ajusta la escala si es necesario
