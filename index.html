@@ -4,90 +4,86 @@
     <meta charset="UTF-8">
     <title>GLB AR Viewer</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: sans-serif; }
-
-        /* Estilos para el video y el canvas 3D (Inicialmente ocultos) */
-        #videoElement, #threeCanvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            object-fit: cover;
-            display: none; /* ESENCIAL: Ocultos al inicio */
-        }
-        #threeCanvas {
-            z-index: 10;
-            background: transparent;
-        }
-
-        /* Estilos para la Pantalla de Inicio (Overlay) */
-        #startScreen {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.9);
-            color: white;
-            z-index: 100;
+        /* ... (Tus estilos CSS existentes) ... */
+        .session-group {
+            margin-top: 20px;
             display: flex;
             flex-direction: column;
-            justify-content: center;
             align-items: center;
-            text-align: center;
         }
-
-        .option-button {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            padding: 15px 30px;
-            margin: 10px;
-            font-size: 1.2em;
-            cursor: pointer;
+        .session-group input, .session-group button {
+            padding: 10px;
+            margin: 5px;
             border-radius: 5px;
-            transition: background-color 0.3s;
+            border: 1px solid #ccc;
+            font-size: 1em;
+            width: 90%;
+            max-width: 300px;
+            color: #333;
         }
-
-        .option-button:hover {
-            background-color: #0056b3;
+        .option-button {
+            /* ... (Tus estilos existentes) ... */
+            margin-top: 20px; /* Separación de la sesión */
         }
     </style>
     
-    <!-- LIBRERÍAS DE 3D -->
+    <!-- LIBRERÍAS DE 3D y MEDIAPIPE (Mantenidas) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-
-    <!-- LIBRERÍAS DE MEDIAPIPE -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1644784998/camera_utils.js"></script>
+
+    <!-- FIREBASE (AGREGADO) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Variables globales del entorno (obligatorias)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+        // Inicialización y autenticación
+        const app = initializeApp(firebaseConfig);
+        window.db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        signInAnonymously(auth).then(userCredential => {
+            window.userId = userCredential.user.uid;
+            console.log("Firebase Auth iniciado con UID:", window.userId);
+            // Si la aplicación se inicia después de la autenticación
+            if (typeof window.onFirebaseReady === 'function') {
+                window.onFirebaseReady();
+            }
+        }).catch(error => {
+            console.error("Error al autenticar en Firebase:", error);
+        });
+    </script>
     
-    <!-- El app.js NO debe tener 'defer' aquí -->
 </head>
 <body>
     
     <!-- PANTALLA DE INICIO / OVERLAY -->
     <div id="startScreen">
-        <h1>Selecciona el modo de interacción</h1>
-        <p>¿Quieres controlar el modelo con tu cámara o verlo en modo 3D estático?</p>
+        <h1>Control Remoto de Modelo 3D</h1>
         
-        <!-- Botón para el MODO CÁMARA/CONTROL -->
-        <button class="option-button" onclick="startApp('camera')">
-            📸 Activar Cámara y Control de Manos
-        </button>
+        <div class="session-group">
+            <input type="text" id="sessionIdInput" placeholder="Ingresa Código de Sesión (6 dígitos)" maxlength="6">
+            <button class="option-button" onclick="startApp('camera')">
+                📲 Usar Teléfono (Enviar Gestos)
+            </button>
+            <button class="option-button" onclick="startApp('canvas')">
+                💻 Usar PC (Recibir y Mostrar Lienzo)
+            </button>
+        </div>
         
-        <!-- Botón para el MODO SOLO LIENZO 3D -->
-        <button class="option-button" onclick="startApp('canvas')">
-            🖼️ Solo Lienzo 3D (Sin Cámara)
-        </button>
+        <p id="sessionStatus" style="color: #ccc; margin-top: 15px;">Esperando selección...</p>
+
     </div>
 
-    <!-- Elemento para el video de la cámara (Oculto inicialmente) -->
+    <!-- ... (Video y contenedor existentes) ... -->
     <video id="videoElement" autoplay playsinline></video>
-    
-    <!-- Contenedor donde Three.js creará el canvas -->
     <div id="container"></div> 
     
     <!-- Mueve el script al final del body para asegurar la carga global -->
