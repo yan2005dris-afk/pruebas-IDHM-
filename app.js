@@ -121,10 +121,11 @@ function initThreeJs() {
     // Cargar el Modelo .glb
     const loader = new THREE.GLTFLoader();
     loader.load(
-        'assets/modelo.glb', // <<-- RUTA CORREGIDA SEGÚN TU CAPTURA
+        'assets/modelo.glb', 
         function (gltf) {
             model = gltf.scene;
-            model.scale.set(1, 1, 1); 
+            // *** SOLUCIÓN B: Reducir la escala para asegurar que se vea completamente ***
+            model.scale.set(0.5, 0.5, 0.5); 
             model.position.set(0, 0, 0); 
             scene.add(model);
         },
@@ -173,7 +174,6 @@ function animate() {
 
     if (currentMode === 'canvas' && controls) {
         controls.update();
-        // Rotación automática solo si el ratón NO está siendo usado
         if(model && controls.enabled){ 
             model.rotation.y += 0.005; 
         }
@@ -192,9 +192,8 @@ function updateModelAndHandVisualization(landmarks) {
     // --- A. Mapeo de Posición para el Modelo (Control) ---
     const indexFingerTip = landmarks[8];
     
-    // Cámara trasera: NO se invierte X
+    // Mapeo (X sin invertir, Y invertida)
     const mappedX = indexFingerTip.x * 10 - 5; 
-    // Y se invierte (0 es arriba en el navegador)
     const mappedY = (1 - indexFingerTip.y) * 10 - 5; 
 
     model.position.x = mappedX;
@@ -204,12 +203,15 @@ function updateModelAndHandVisualization(landmarks) {
     landmarks.forEach((landmark, index) => {
         const pointMesh = handPoints[index];
         
-        // Cámara trasera: NO se invierte X para los puntos
+        // Mapeo de posición X e Y (igual que el modelo)
         const pointX = landmark.x * 10 - 5; 
         const pointY = (1 - landmark.y) * 10 - 5;
-        const pointZ = landmark.z * -10; 
         
-        pointMesh.position.set(pointX, pointY, pointZ - 1); 
+        // *** SOLUCIÓN A: Ajustar la Z para que los puntos sean visibles (adelante del modelo) ***
+        // Hacemos que la Z sea más grande para aparecer más cerca de la cámara (Z positiva)
+        const pointZ = (landmark.z * -5) + 2; 
+        
+        pointMesh.position.set(pointX, pointY, pointZ); 
         pointMesh.visible = true;
     });
 }
@@ -231,7 +233,7 @@ function startApp(mode) {
     
     if (mode === 'camera') {
         // MODO CÁMARA (Control de Manos)
-        setupCamera(); 
+        setupCamera(); // Esto activa el video y MediaPipe
         
         if(controls){
             controls.enabled = false;
