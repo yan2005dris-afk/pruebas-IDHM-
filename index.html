@@ -55,33 +55,42 @@
         }
     </style>
     
+    <!-- LIBRERÍAS DE 3D -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
+    <!-- LIBRERÍAS DE MEDIAPIPE -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1644784998/camera_utils.js"></script>
-
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-        
-    <script src="app.js" defer></script> 
-    </head>
+    
+    <!-- El app.js NO debe tener 'defer' aquí -->
+</head>
 <body>
     
+    <!-- PANTALLA DE INICIO / OVERLAY -->
     <div id="startScreen">
         <h1>Selecciona el modo de interacción</h1>
         <p>¿Quieres controlar el modelo con tu cámara o verlo en modo 3D estático?</p>
         
+        <!-- Botón para el MODO CÁMARA/CONTROL -->
         <button class="option-button" onclick="startApp('camera')">
             📸 Activar Cámara y Control de Manos
         </button>
         
+        <!-- Botón para el MODO SOLO LIENZO 3D -->
         <button class="option-button" onclick="startApp('canvas')">
             🖼️ Solo Lienzo 3D (Sin Cámara)
         </button>
     </div>
 
+    <!-- Elemento para el video de la cámara (Oculto inicialmente) -->
     <video id="videoElement" autoplay playsinline></video>
     
+    <!-- Contenedor donde Three.js creará el canvas -->
     <div id="container"></div> 
+    
+    <!-- Mueve el script al final del body para asegurar la carga global -->
+    <script src="app.js"></script>
 </body>
 </html>
