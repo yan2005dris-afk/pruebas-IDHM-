@@ -7,8 +7,9 @@ let videoElement;
 let scene, camera, renderer, model;
 let hands;
 let cameraUtil;
-let handLandmarks = []; 
+let handLandmarks = [];
 let handPoints = []; // Mallas 3D para visualizar los 21 puntos de la mano
+let currentMode = 'canvas'; // Variable para rastrear el modo actual
 
 // ===================================
 // 1. CONFIGURACIÓN MEDIAPIPE
@@ -16,11 +17,14 @@ let handPoints = []; // Mallas 3D para visualizar los 21 puntos de la mano
 
 // Función que se ejecuta cada vez que MediaPipe detecta manos
 function onResults(results) {
+    // Solo procesamos si estamos en modo cámara
+    if (currentMode !== 'camera') return;
+
     // Si hay manos detectadas, actualiza las landmarks
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         handLandmarks = results.multiHandLandmarks;
         // Solo usamos la primera mano detectada para el control
-        updateModelAndHandVisualization(handLandmarks[0]); 
+        updateModelAndHandVisualization(handLandmarks[0]);
     } else {
         // Si no hay manos, ocultamos los puntos de la mano
         handLandmarks = [];
@@ -37,7 +41,7 @@ function initMediaPipe() {
     });
     hands.setOptions({
         maxNumHands: 2,
-        modelComplexity: 1, // 0 para rápido, 1 para mejor precisión
+        modelComplexity: 1,
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
     });
@@ -51,16 +55,19 @@ function initMediaPipe() {
 
 function setupCamera() {
     videoElement = document.getElementById('videoElement');
-    initMediaPipe(); // Inicializa MediaPipe primero
+    initMediaPipe(); // Inicializa MediaPipe
+
+    // Muestra el elemento de video (estaba oculto por defecto en el CSS)
+    videoElement.style.display = 'block';
 
     // Pide acceso a la cámara
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        // facingMode: 'user' usa la cámara frontal (modo espejo)
         navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
             .then(function(stream) {
                 videoElement.srcObject = stream;
                 videoElement.onloadedmetadata = function() {
                     videoElement.play();
+                    // Inicializamos Three.js, que ahora sí tendrá el video de fondo
                     initThreeJs();
 
                     // Inicializar CameraUtil para enviar fotogramas a MediaPipe
@@ -91,37 +98,45 @@ function initThreeJs() {
     const container = document.getElementById('container');
     const width = window.innerWidth;
     const height = window.innerHeight;
-    
-    // Configurar Escena, Cámara y Renderer (con alpha: true)
+
+    // Configurar Escena, Cámara y Renderer
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
-    camera.position.z = 5; // Posición de la cámara en Z
-    
-    renderer = new THREE.WebGLRenderer({ 
+    camera.position.z = 5;
+
+    renderer = new THREE.WebGLRenderer({
         antialias: true,
-        alpha: true // Fondo transparente para ver el video
+        // Alpha es true SOLO en modo cámara. En modo lienzo, podemos usar un color sólido.
+        alpha: currentMode === 'camera' 
     });
     renderer.setSize(width, height);
-    renderer.domElement.id = 'threeCanvas'; 
+    renderer.domElement.id = 'threeCanvas';
     container.appendChild(renderer.domElement);
-    
-    // Añadir Luces 
+
+    // Si no estamos en modo cámara, establecemos un fondo sólido
+    if (currentMode === 'canvas') {
+         renderer.setClearColor(0x333333, 1); // Gris oscuro
+         renderer.domElement.style.display = 'block';
+    }
+
+
+    // Añadir Luces
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
     directionalLight.position.set(0, 10, 5);
     scene.add(directionalLight);
-    
+
     // Cargar el Modelo .glb
     const loader = new THREE.GLTFLoader();
     loader.load(
         'assets/models/mi_modelo.glb', // ¡CAMBIA ESTA RUTA!
         function (gltf) {
             model = gltf.scene;
-            model.scale.set(1, 1, 1); 
-            model.position.set(0, 0, 0); 
+            model.scale.set(1, 1, 1);
+            model.position.set(0, 0, 0);
             scene.add(model);
         },
-        undefined, 
+        undefined,
         function (error) {
             console.error('Error cargando el modelo GLB', error);
         }
@@ -129,7 +144,7 @@ function initThreeJs() {
 
     // Inicializar los puntos 3D para la visualización de la mano
     setupHandVisualization();
-    
+
     // Iniciar el bucle de renderizado
     window.addEventListener('resize', onWindowResize, false);
     animate();
@@ -137,12 +152,12 @@ function initThreeJs() {
 
 // Inicializa las 21 esferas que dibujarán la mano
 function setupHandVisualization() {
-    const pointGeometry = new THREE.SphereGeometry(0.05, 10, 10); // Tamaño del punto
-    const pointMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); // Color verde
-    
+    const pointGeometry = new THREE.SphereGeometry(0.05, 10, 10);
+    const pointMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+
     for (let i = 0; i < 21; i++) {
         const point = new THREE.Mesh(pointGeometry, pointMaterial);
-        point.visible = false; 
+        point.visible = false;
         scene.add(point);
         handPoints.push(point);
     }
@@ -156,8 +171,10 @@ function onWindowResize() {
 
 function animate() {
     requestAnimationFrame(animate);
-
-    // Renderiza la escena
+    // En modo lienzo, podemos añadir una rotación automática para que se vea bien
+    if (currentMode === 'canvas' && model) {
+        model.rotation.y += 0.005;
+    }
     renderer.render(scene, camera);
 }
 
@@ -168,43 +185,60 @@ function animate() {
 function updateModelAndHandVisualization(landmarks) {
     if (!model || handPoints.length === 0) return;
 
-    // A. Mapeo de Posición para el Modelo (Control)
-    // Usamos el landmark 8 (punta del dedo índice) para mover el modelo.
+    // --- A. Mapeo de Posición para el Modelo (Control) ---
     const indexFingerTip = landmarks[8];
-    
-    // Mapear coordenadas normalizadas (0 a 1) a coordenadas 3D (-5 a 5)
-    // X e Y están invertidos para simular el modo espejo de la cámara y el sistema de coordenadas 3D.
-    const mappedX = (1 - indexFingerTip.x) * 10 - 5; 
-    const mappedY = (1 - indexFingerTip.y) * 10 - 5; 
-    
-    // Aplicar la nueva posición (Z es fija para el plano de la pantalla)
-    // El modelo se mueve con el dedo en el plano X-Y.
+    const mappedX = (1 - indexFingerTip.x) * 10 - 5;
+    const mappedY = (1 - indexFingerTip.y) * 10 - 5;
+
     model.position.x = mappedX;
     model.position.y = mappedY;
-    
-    // B. Visualización de los Puntos de la Mano en 3D
+
+
+    // --- B. Visualización de los Puntos de la Mano en 3D ---
     landmarks.forEach((landmark, index) => {
         const pointMesh = handPoints[index];
-        
-        // Mapear cada punto individualmente (con inversión de X e Y)
+
         const pointX = (1 - landmark.x) * 10 - 5;
         const pointY = (1 - landmark.y) * 10 - 5;
-        
-        // Z (Profundidad): Los valores Z de MediaPipe son relativos (más grande = más cerca).
-        // Lo multiplicamos por un factor y lo ajustamos para que la mano aparezca cerca del modelo.
-        // Un valor más pequeño de Z en MediaPipe significa que la mano está más lejos de la cámara.
-        // En Three.js, un valor positivo de Z es "hacia la cámara". 
-        // Usamos -1 para que el modelo aparezca en el espacio 3D (puedes ajustar -10 para acercar/alejar la visualización de la mano)
-        const pointZ = landmark.z * -10; 
-        
-        pointMesh.position.set(pointX, pointY, pointZ - 1); // -1 lo coloca cerca del modelo
+        const pointZ = landmark.z * -10;
+
+        pointMesh.position.set(pointX, pointY, pointZ - 1);
         pointMesh.visible = true;
     });
 }
 
 
 // ===================================
-// INICIO DE LA APLICACIÓN
+// 5. FUNCIÓN DE INICIO POR SELECCIÓN
 // ===================================
 
-setupCamera(); // Comienza pidiendo acceso a la cámara
+/**
+ * Función llamada por los botones del HTML para iniciar la aplicación.
+ * @param {string} mode - 'camera' para activar la cámara y MediaPipe, o 'canvas' para solo 3D.
+ */
+function startApp(mode) {
+    // Establece el modo de aplicación actual
+    currentMode = mode;
+    
+    // Oculta la pantalla de inicio
+    document.getElementById('startScreen').style.display = 'none';
+
+    if (mode === 'camera') {
+        // MODO CÁMARA/CONTROL
+        // setupCamera() se encargará de inicializar MediaPipe, la cámara y luego Three.js
+        setupCamera();
+
+    } else if (mode === 'canvas') {
+        // MODO SOLO LIENZO 3D
+        // Solo inicializa Three.js (sin el video de fondo ni MediaPipe activo)
+        initThreeJs();
+    }
+}
+
+// ===================================
+// LÍNEA DE INICIO ANTIGUA ELIMINADA:
+// setupCamera(); 
+// ===================================
+
+// La aplicación espera a que el usuario haga clic en un botón en el HTML.
+// Ya no es necesario poner la función 'startApp' aquí, ya que el HTML la llama directamente.
