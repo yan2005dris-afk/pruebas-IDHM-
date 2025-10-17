@@ -11,6 +11,10 @@ let handLandmarks = [];
 let handPoints = []; // Mallas 3D para visualizar los 21 puntos de la mano
 let currentMode = 'canvas'; // Variable para rastrear el modo actual
 
+let handPoints = []; 
+let currentMode = 'canvas'; 
+let controls; // Nueva variable para OrbitControls
+
 // ===================================
 // 1. CONFIGURACIÓN MEDIAPIPE
 // ===================================
@@ -144,6 +148,12 @@ function initThreeJs() {
 
     // Inicializar los puntos 3D para la visualización de la mano
     setupHandVisualization();
+    
+    // 🌟 NUEVO: Inicializar OrbitControls 🌟
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true; // Efecto de inercia más suave
+    controls.dampingFactor = 0.05;
+    controls.screenSpacePanning = false;
 
     // Iniciar el bucle de renderizado
     window.addEventListener('resize', onWindowResize, false);
@@ -172,8 +182,11 @@ function onWindowResize() {
 function animate() {
     requestAnimationFrame(animate);
     // En modo lienzo, podemos añadir una rotación automática para que se vea bien
-    if (currentMode === 'canvas' && model) {
-        model.rotation.y += 0.005;
+    if (currentMode === 'canvas' ) {
+        controls.update();
+        if(model && !controls.enabled){
+            model.rotation.y +=0.005;        
+        }
     }
     renderer.render(scene, camera);
 }
