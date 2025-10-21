@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+  web:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      # Esto sincroniza tu carpeta 'public' local con la del contenedor
+      # Así puedes cambiar el HTML/JS/CSS sin reiniciar el contenedor
+      - ./public:/usr/src/app/public
