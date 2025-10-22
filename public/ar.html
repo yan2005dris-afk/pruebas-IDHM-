@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web AR de Manos</title>
+    <style>
+
+        #switch-cam-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 100; /* Para que esté sobre el video */
+            padding: 10px 15px;
+            font-size: 1em;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: 1px solid white;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        #switch-cam-btn:active {
+            background-color: rgba(0, 0, 0, 0.8);
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #111;
+        }
+        /* Contenedor que centra el video */
+        #ar-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        /* El video y el canvas deben superponerse perfectamente */
+        video, canvas {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scaleX(-1); /* Efecto espejo */
+            width: 100%;
+            height: 100%;
+            /* 'cover' asegura que llene la pantalla, 'contain' es otra opción */
+            object-fit: cover; 
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ar-container">
+        <video id="webcam" autoplay playsinline></video>
+        
+        <canvas id="ar-canvas"></canvas>
+        <button id="switch-cam-btn">Cambiar Cámara</button>
+    </div>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+      }
+    }
+    </script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.js"></script>
+    
+    <script src="/js/ar-main.js" type="module"></script>
+</body>
+</html>

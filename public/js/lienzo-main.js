@@ -129,7 +129,7 @@ function setupSocketListeners() {
         }
 
         // Traduce los datos del gesto en acciones 3D
-        if (data.type === 'pinch') {
+        if (data.type === 'pinch_hold') {
             
             // --- Acción 1: Escalar con la distancia del pellizco ---
             // Mapeamos la distancia del pellizco (ej. 0.01 a 0.05) a una escala (ej. 2.0 a 0.5)

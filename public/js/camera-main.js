@@ -13,6 +13,32 @@ let runningMode = "VIDEO"; // El modo 'VIDEO' es necesario para 'detectForVideo'
 let webcamRunning = false;
 let lastVideoTime = -1;
 
+const MAX_FPS = 30; // limitar detecciones a 30 fps
+let lastInferenceTime = 0;
+let lastEmitTime = 0;
+const EMIT_INTERVAL = 100; // emitir datos cada 100 ms
+let lastGestureType = '';
+
+
+//variables que reemplazan a las swipe
+
+let gestureState = 'none'; // 'none', 'pinch_start', 'pinch_hoold'
+let pinchStartPos = null; // almacena la posición inicial del pinch
+let gestureCooldown = 0; // frames de cooldown entre gestos
+
+/*
+//nuevas variables globales
+let lastHandX = -1; // Para almacenar la última posición X de la mano
+let swipeCooldown = 0; // Para evitar múltiples swipes en poco tiempo
+
+const SWIPE_THRESHOLD = 0.08; // Umbral de movimiento para detectar swipe
+const SWIPE_COOLDOWN_FRAMES = 30; // Frames de cooldown entre swipes
+*/
+
+//nuevas constante de gestos
+const PINCH_THRESHOLD = 0.05; // Umbral de distancia para detectar pinch
+const MOVE_THRESHOLD = 0.1; // Umbral de movimiento para detectar move
+const COOLDOWN_FRAMES = 5; // Frames de cooldown entre swipes
 // Elementos del DOM
 const video = document.getElementById("webcam");
 const canvasElement = document.getElementById("output_canvas");
@@ -64,9 +90,8 @@ function enableCam() {
 
     // Restricciones para obtener el video
     const constraints = {
-        video: { width: 640, height: 480 }
+        video: { width: 480, height: 360, frameRate: { ideal: 30, max: 30 } }
     };
-
     // Pide permiso y accede a la cámara
     navigator.mediaDevices.getUserMedia(constraints).then((stream) => {
         video.srcObject = stream;
@@ -89,8 +114,22 @@ async function predictWebcam() {
     canvasElement.width = video.videoWidth;
     canvasElement.height = video.videoHeight;
 
-    const startTimeMs = performance.now();
+    const now = performance.now();
 
+    const delta = now - lastInferenceTime;
+    if (delta < (1000 / MAX_FPS)) {
+        // Si no ha pasado suficiente tiempo, espera al siguiente frame
+        window.requestAnimationFrame(predictWebcam);
+        return;
+    }
+    const startTimeMs = now;    
+    lastInferenceTime = now;
+
+    // <-- ¡CORRECCIÓN 1! Reducimos el enfriador en cada frame
+    if (gestureCooldown > 0) {
+        gestureCooldown--;
+    }
+    try{
     // Solo detecta si el video se ha actualizado
     if (lastVideoTime !== video.currentTime) {
         lastVideoTime = video.currentTime;
@@ -105,28 +144,47 @@ async function predictWebcam() {
         // Si se detectaron manos...
         if (results.landmarks && results.landmarks.length > 0) {
             
-            // --- MÓDULO 1: DIBUJAR LAS MANOS (Visualización local) ---
-            for (const landmarks of results.landmarks) {
-                drawHand(landmarks); // Llama a nuestra función de dibujo
-            }
+            // --- MÓDULO 1: DIBUJAR ---
+            const firstHand = results.landmarks[0];
+            drawHand(firstHand);
 
-            // --- MÓDULO 2: PROCESAR GESTO Y COMUNICAR (Socket.io) ---
-            // Solo procesamos la primera mano detectada por simplicidad
-            const gestureData = processGesture(results.landmarks[0]);
+            // --- MÓDULO 2: PROCESAR GESTO ---
+            // Solo procesamos la primera mano detectada
+            const gestureData = processGesture(firstHand); 
             
             if (gestureData) {
-                // Si detectamos un gesto, lo enviamos al servidor
-                socket.emit('gesture-data', gestureData);
-                // Actualizamos la UI local
-                gestureStatus.innerText = `Gesto detectado: ${gestureData.type} (Distancia: ${gestureData.distance.toFixed(2)})`;
-            } else {
-                gestureStatus.innerText = "Gesto detectado: Ninguno";
+    // Enviar solo si ha pasado el intervalo mínimo
+    if (now - lastEmitTime > EMIT_INTERVAL) {
+        socket.emit('gesture-data', gestureData);
+        lastEmitTime = now;
+    }
+
+        // Actualizar UI solo si cambió el gesto
+        if (gestureData.type !== lastGestureType) {
+            lastGestureType = gestureData.type;
+            let status = `Gesto: ${gestureData.type}`;
+            if (gestureData.type === 'pinch_hold') {
+                status += ` (Dist: ${gestureData.distance.toFixed(2)})`;
+            } else if (gestureData.type === 'pinch_move') {
+                status += ` (Dir: ${gestureData.direction})`;
             }
+            gestureStatus.innerText = status;
+        }
+    } else if (lastGestureType !== 'none') {
+        lastGestureType = 'none';
+        gestureStatus.innerText = "Gesto detectado: Ninguno";
+    }
+        } else {
+            // Si no hay manos, reseteamos la posición del swipe
+            gestureState = 'none';
+            pinchStartPos = null;
         }
         
         canvasCtx.restore();
     }
-
+    } catch (error) {
+        console.error("Error durante la predicción:", error);
+    }
     // Vuelve a llamar a esta función en el próximo frame
     if (webcamRunning) {
         window.requestAnimationFrame(predictWebcam);
@@ -174,33 +232,90 @@ function drawHand(landmarks) {
 // (Este es el "traductor" de landmarks a acciones simples)
 
 function processGesture(landmarks) {
+    
+    if(gestureCooldown > 0){
+        return null; // Si estamos en cooldown, no procesamos gestos
+    }
+    
+    // Verifica si la mano está apuntando hacia abajo (ignoramos esos casos)
+    const wrist_y = landmarks[0].y;
+    const middle_tip_y = landmarks[12].y;
+
+    if (middle_tip_y > wrist_y) {
+        gestureStatus.innerText = "Estado: Mano apuntando abajo (ignorando)";
+        gestureState = 'none'; // Resetea el estado del gesto
+        return null; // No proceses ningún gesto
+    }
+    
+    
     // Landmark 4: Punta del pulgar
     // Landmark 8: Punta del dedo índice
     const thumbTip = landmarks[4];
     const indexTip = landmarks[8];
-    
-    // Calcula la distancia 2D (podríamos usar 3D con 'z', pero 2D es más simple)
-    const dx = thumbTip.x - indexTip.x;
-    const dy = thumbTip.y - indexTip.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
 
+    // Calcula la distancia 2D (podríamos usar 3D con 'z', pero 2D es más simple)
+    const distance = distance2D(thumbTip, indexTip);
+    const midPoint = midpoint2D(thumbTip, indexTip);
+    
+    const pinchThreshold = 0.05;
+
+    const handX = landmarks[9].x;
     // Define un umbral para el "pellizco"
     // Este valor (0.05) tendrás que ajustarlo probando
-    const pinchThreshold = 0.05; 
-
+ 
+    
     if (distance < pinchThreshold) {
-        // Gesto de "pellizco" detectado
+        if (gestureState === 'none' ){
+            gestureState = 'pinch_start';
+            pinchStartPos = midPoint;
+            return null;
+        }
+    else if (gestureState === 'pinch_start' || gestureState === 'pinch_hold'){
+        gestureState = 'pinch_hold';
+
+        const deltaX = midPoint.x - pinchStartPos.x;
+        
+        if(deltaX > MOVE_THRESHOLD){
+            gestureState = 'none';
+            gestureCooldown = COOLDOWN_FRAMES;
+            return { type: 'pinch_move', direction: 'right'};
+        }
+        else if(deltaX < -MOVE_THRESHOLD){
+            gestureState = 'none';
+            gestureCooldown = COOLDOWN_FRAMES;
+            return { type: 'pinch_move', direction: 'left'};
+        }
         return {
-            type: 'pinch',
+            type: 'pinch_hold',
             distance: distance,
-            // Podrías enviar el punto medio para saber DÓNDE se hace el pellizco
-            midpoint: {
-                x: (thumbTip.x + indexTip.x) / 2,
-                y: (thumbTip.y + indexTip.y) / 2
-            }
+            midpoint: midPoint
         };
     }
 
+    }
+    else {
+        if(gestureState === 'pinch_start' || gestureState === 'pinch_hold'){
+            gestureState = 'none';
+            pinchStartPos = null;
+        }
+        gestureState = 'none';
+        return null;
+    }
     // No se detectó ningún gesto
     return null;
+
+
+// --- Funciones auxiliares ---
+function distance2D(p1, p2) {
+    const dx = p1.x - p2.x;
+    const dy = p1.y - p2.y;
+    return Math.hypot(dx, dy);
 }
+
+function midpoint2D(p1, p2) {
+    return { x: (p1.x + p2.x) * 0.5, y: (p1.y + p2.y) * 0.5 };
+}
+
+
+}
+
