@@ -9,36 +9,26 @@ import {
 // --- 1. DEFINICIÓN DE VARIABLES GLOBALES ---
 
 let handLandmarker = undefined;
-let runningMode = "VIDEO"; // El modo 'VIDEO' es necesario para 'detectForVideo'
+let runningMode = "VIDEO";
 let webcamRunning = false;
 let lastVideoTime = -1;
 
-const MAX_FPS = 30; // limitar detecciones a 30 fps
+const MAX_FPS = 30;
 let lastInferenceTime = 0;
 let lastEmitTime = 0;
-const EMIT_INTERVAL = 100; // emitir datos cada 100 ms
-let lastGestureType = '';
+const EMIT_INTERVAL = 100;
+let lastGestureType = 'Ninguno';
 
+// --- ¡NUEVAS VARIABLES PARA GESTOS DE SWIPE POR MANO! ---
+// (Reemplazan toda la lógica de 'pinch' y 'gestureState')
+let rightHandState = { lastX: -1, cooldown: 0 };
+let leftHandState = { lastX: -1, cooldown: 0 };
 
-//variables que reemplazan a las swipe
-
-let gestureState = 'none'; // 'none', 'pinch_start', 'pinch_hoold'
-let pinchStartPos = null; // almacena la posición inicial del pinch
-let gestureCooldown = 0; // frames de cooldown entre gestos
-
-/*
-//nuevas variables globales
-let lastHandX = -1; // Para almacenar la última posición X de la mano
-let swipeCooldown = 0; // Para evitar múltiples swipes en poco tiempo
-
+// Constantes para el nuevo gesto
 const SWIPE_THRESHOLD = 0.08; // Umbral de movimiento para detectar swipe
-const SWIPE_COOLDOWN_FRAMES = 30; // Frames de cooldown entre swipes
-*/
+const COOLDOWN_FRAMES = 30; // Frames de cooldown (0.5 seg a 60fps)
+const OPEN_PALM_THRESHOLD = 0.1; // Qué tan "abierta" debe estar la mano
 
-//nuevas constante de gestos
-const PINCH_THRESHOLD = 0.05; // Umbral de distancia para detectar pinch
-const MOVE_THRESHOLD = 0.1; // Umbral de movimiento para detectar move
-const COOLDOWN_FRAMES = 5; // Frames de cooldown entre swipes
 // Elementos del DOM
 const video = document.getElementById("webcam");
 const canvasElement = document.getElementById("output_canvas");
@@ -56,50 +46,39 @@ socket.on("connect", () => {
 // --- 2. FUNCIÓN PRINCIPAL DE INICIALIZACIÓN ---
 
 async function runDemo() {
-    // Carga las librerías y modelos de MediaPipe
     const vision = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
     );
     
-    // Configura el HandLandmarker
     handLandmarker = await HandLandmarker.createFromOptions(vision, {
         baseOptions: {
-            // Apunta al modelo de manos de MediaPipe
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-            delegate: "GPU" // Usa GPU para mejor rendimiento
+            delegate: "GPU"
         },
         runningMode: runningMode,
-        numHands: 2 // Detectar hasta 2 manos
+        numHands: 2 // ¡Importante! Asegurarse de que detecte 2 manos
     });
 
     console.log("HandLandmarker cargado y listo.");
-    
-    // Inicia la cámara
     enableCam();
 }
-
-runDemo(); // Inicia todo el proceso
+runDemo();
 
 // --- 3. CONFIGURACIÓN DE LA WEBCAM ---
 
 function enableCam() {
     if (webcamRunning) {
         webcamRunning = false;
-        // (Aquí podrías añadir lógica para apagar la cámara)
     }
-
-    // Restricciones para obtener el video
     const constraints = {
         video: { width: 480, height: 360, frameRate: { ideal: 30, max: 30 } }
     };
-    // Pide permiso y accede a la cámara
     navigator.mediaDevices.getUserMedia(constraints).then((stream) => {
         video.srcObject = stream;
-        // Cuando el video carga sus datos, empieza el bucle de predicción
         video.addEventListener("loadeddata", () => {
             webcamRunning = true;
             console.log("Webcam iniciada. Empezando predicción.");
-            predictWebcam(); // Inicia el bucle
+            predictWebcam();
         });
     }).catch((err) => {
         console.error("Error al acceder a la webcam: ", err);
@@ -107,96 +86,86 @@ function enableCam() {
     });
 }
 
-// --- 4. BUCLE DE PREDICCIÓN Y RENDERIZADO ---
+// --- 4. BUCLE DE PREDICCIÓN (TOTALMENTE NUEVO) ---
 
 async function predictWebcam() {
-    // Ajusta el tamaño del canvas al del video (por si acaso)
     canvasElement.width = video.videoWidth;
     canvasElement.height = video.videoHeight;
 
     const now = performance.now();
-
     const delta = now - lastInferenceTime;
+
     if (delta < (1000 / MAX_FPS)) {
-        // Si no ha pasado suficiente tiempo, espera al siguiente frame
         window.requestAnimationFrame(predictWebcam);
         return;
     }
-    const startTimeMs = now;    
     lastInferenceTime = now;
 
-    // <-- ¡CORRECCIÓN 1! Reducimos el enfriador en cada frame
-    if (gestureCooldown > 0) {
-        gestureCooldown--;
-    }
-    try{
-    // Solo detecta si el video se ha actualizado
-    if (lastVideoTime !== video.currentTime) {
-        lastVideoTime = video.currentTime;
-        
-        // Llama a la función principal de detección de MediaPipe
-        const results = await handLandmarker.detectForVideo(video, startTimeMs);
+    // Reducir cooldowns
+    if (rightHandState.cooldown > 0) rightHandState.cooldown--;
+    if (leftHandState.cooldown > 0) leftHandState.cooldown--;
 
-        // Limpia el canvas antes de dibujar
-        canvasCtx.save();
-        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    try {
+        if (lastVideoTime !== video.currentTime) {
+            lastVideoTime = video.currentTime;
+            const results = await handLandmarker.detectForVideo(video, now);
 
-        // Si se detectaron manos...
-        if (results.landmarks && results.landmarks.length > 0) {
-            
-            // --- MÓDULO 1: DIBUJAR ---
-            const firstHand = results.landmarks[0];
-            drawHand(firstHand);
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-            // --- MÓDULO 2: PROCESAR GESTO ---
-            // Solo procesamos la primera mano detectada
-            const gestureData = processGesture(firstHand); 
-            
-            if (gestureData) {
-    // Enviar solo si ha pasado el intervalo mínimo
-    if (now - lastEmitTime > EMIT_INTERVAL) {
-        socket.emit('gesture-data', gestureData);
-        lastEmitTime = now;
-    }
+            let gestureToShow = 'Gesto detectado: Ninguno';
 
-        // Actualizar UI solo si cambió el gesto
-        if (gestureData.type !== lastGestureType) {
-            lastGestureType = gestureData.type;
-            let status = `Gesto: ${gestureData.type}`;
-            if (gestureData.type === 'pinch_hold') {
-                status += ` (Dist: ${gestureData.distance.toFixed(2)})`;
-            } else if (gestureData.type === 'pinch_move') {
-                status += ` (Dir: ${gestureData.direction})`;
+            // Si hay manos detectadas...
+            if (results.landmarks && results.landmarks.length > 0) {
+                
+                // Iterar sobre CADA mano detectada
+                for (let i = 0; i < results.landmarks.length; i++) {
+                    const landmarks = results.landmarks[i];
+                    // Obtener si es 'Left' o 'Right'
+                    const hand = results.handedness[i][0].categoryName;
+                    
+                    // Dibujar la mano
+                    drawHand(landmarks);
+
+                    // Procesar el gesto para ESTA mano
+                    const gestureData = processHandSwipe(landmarks, hand);
+                    
+                    if (gestureData) {
+                        // Enviar datos (con throttling)
+                        if (now - lastEmitTime > EMIT_INTERVAL) {
+                            socket.emit('gesture-data', gestureData);
+                            lastEmitTime = now;
+                        }
+                        // Actualizar UI
+                        gestureToShow = `Gesto: ${gestureData.hand} ${gestureData.type} ${gestureData.direction}`;
+                    }
+                }
+                
+            } else {
+                // Si no hay manos, resetear estados
+                rightHandState.lastX = -1;
+                leftHandState.lastX = -1;
             }
-            gestureStatus.innerText = status;
+
+            // Actualizar el texto en la UI (solo si cambia)
+            if (gestureToShow !== lastGestureType) {
+                lastGestureType = gestureToShow;
+                gestureStatus.innerText = gestureToShow;
+            }
+
+            canvasCtx.restore();
         }
-    } else if (lastGestureType !== 'none') {
-        lastGestureType = 'none';
-        gestureStatus.innerText = "Gesto detectado: Ninguno";
-    }
-        } else {
-            // Si no hay manos, reseteamos la posición del swipe
-            gestureState = 'none';
-            pinchStartPos = null;
-        }
-        
-        canvasCtx.restore();
-    }
     } catch (error) {
         console.error("Error durante la predicción:", error);
     }
-    // Vuelve a llamar a esta función en el próximo frame
+    
     if (webcamRunning) {
         window.requestAnimationFrame(predictWebcam);
     }
 }
 
-// --- 5. FUNCIÓN DE DIBUJO ---
-// (Esta función dibuja los puntos y líneas en el canvas local)
-
+// --- 5. FUNCIÓN DE DIBUJO (Sin cambios) ---
 function drawHand(landmarks) {
-    // Dibujar los conectores (líneas entre los puntos)
-    // Estos son los índices de los puntos que deben conectarse
     const connections = [
         [0, 1], [1, 2], [2, 3], [3, 4],       // Pulgar
         [0, 5], [5, 6], [6, 7], [7, 8],       // Índice
@@ -204,10 +173,8 @@ function drawHand(landmarks) {
         [9, 13], [13, 14], [14, 15], [15, 16], // Anular
         [13, 17], [0, 17], [17, 18], [18, 19], [19, 20] // Meñique y Palma
     ];
-
-    canvasCtx.strokeStyle = 'rgba(0, 255, 0, 0.7)'; // Verde
+    canvasCtx.strokeStyle = 'rgba(0, 255, 0, 0.7)';
     canvasCtx.lineWidth = 3;
-
     for (const conn of connections) {
         const p1 = landmarks[conn[0]];
         const p2 = landmarks[conn[1]];
@@ -218,9 +185,7 @@ function drawHand(landmarks) {
             canvasCtx.stroke();
         }
     }
-
-    // Dibujar los landmarks (puntos)
-    canvasCtx.fillStyle = 'rgba(255, 0, 0, 0.7)'; // Rojo
+    canvasCtx.fillStyle = 'rgba(255, 0, 0, 0.7)';
     for (const point of landmarks) {
         canvasCtx.beginPath();
         canvasCtx.arc(point.x * canvasElement.width, point.y * canvasElement.height, 5, 0, 2 * Math.PI);
@@ -228,94 +193,68 @@ function drawHand(landmarks) {
     }
 }
 
-// --- 6. FUNCIÓN DE PROCESAMIENTO DE GESTOS ---
-// (Este es el "traductor" de landmarks a acciones simples)
+// --- 6. NUEVA FUNCIÓN DE PROCESAMIENTO DE GESTOS ---
+// (Reemplaza la antigua 'processGesture')
 
-function processGesture(landmarks) {
-    
-    if(gestureCooldown > 0){
-        return null; // Si estamos en cooldown, no procesamos gestos
-    }
-    
-    // Verifica si la mano está apuntando hacia abajo (ignoramos esos casos)
-    const wrist_y = landmarks[0].y;
-    const middle_tip_y = landmarks[12].y;
-
-    if (middle_tip_y > wrist_y) {
-        gestureStatus.innerText = "Estado: Mano apuntando abajo (ignorando)";
-        gestureState = 'none'; // Resetea el estado del gesto
-        return null; // No proceses ningún gesto
-    }
-    
-    
-    // Landmark 4: Punta del pulgar
-    // Landmark 8: Punta del dedo índice
-    const thumbTip = landmarks[4];
-    const indexTip = landmarks[8];
-
-    // Calcula la distancia 2D (podríamos usar 3D con 'z', pero 2D es más simple)
-    const distance = distance2D(thumbTip, indexTip);
-    const midPoint = midpoint2D(thumbTip, indexTip);
-    
-    const pinchThreshold = 0.05;
-
-    const handX = landmarks[9].x;
-    // Define un umbral para el "pellizco"
-    // Este valor (0.05) tendrás que ajustarlo probando
- 
-    
-    if (distance < pinchThreshold) {
-        if (gestureState === 'none' ){
-            gestureState = 'pinch_start';
-            pinchStartPos = midPoint;
-            return null;
+function processHandSwipe(landmarks, hand) {
+    // 1. Verificar si la palma está abierta
+    if (!isHandOpen(landmarks)) {
+        // Si la mano no está abierta, resetear la posición para el swipe
+        if (hand === 'Right') {
+            rightHandState.lastX = -1;
+        } else {
+            leftHandState.lastX = -1;
         }
-    else if (gestureState === 'pinch_start' || gestureState === 'pinch_hold'){
-        gestureState = 'pinch_hold';
-
-        const deltaX = midPoint.x - pinchStartPos.x;
-        
-        if(deltaX > MOVE_THRESHOLD){
-            gestureState = 'none';
-            gestureCooldown = COOLDOWN_FRAMES;
-            return { type: 'pinch_move', direction: 'right'};
-        }
-        else if(deltaX < -MOVE_THRESHOLD){
-            gestureState = 'none';
-            gestureCooldown = COOLDOWN_FRAMES;
-            return { type: 'pinch_move', direction: 'left'};
-        }
-        return {
-            type: 'pinch_hold',
-            distance: distance,
-            midpoint: midPoint
-        };
-    }
-
-    }
-    else {
-        if(gestureState === 'pinch_start' || gestureState === 'pinch_hold'){
-            gestureState = 'none';
-            pinchStartPos = null;
-        }
-        gestureState = 'none';
         return null;
     }
-    // No se detectó ningún gesto
+
+    // 2. Obtener el estado correcto (derecho o izquierdo)
+    let state = (hand === 'Right') ? rightHandState : leftHandState;
+
+    // 3. Si estamos en cooldown, no hacer nada
+    if (state.cooldown > 0) {
+        return null;
+    }
+
+    // 4. Lógica de Swipe
+    const handX = landmarks[9].x; // Usamos la base de la palma (landmark 9)
+
+    // Si ya teníamos una posición guardada...
+    if (state.lastX !== -1) {
+        const deltaX = handX - state.lastX;
+
+        // Swipe a la derecha
+        if (deltaX > SWIPE_THRESHOLD) {
+            state.cooldown = COOLDOWN_FRAMES; // Activar cooldown
+            state.lastX = -1; // Resetear posición
+            return { type: 'swipe', hand: hand, direction: 'right' };
+        }
+        // Swipe a la izquierda
+        else if (deltaX < -SWIPE_THRESHOLD) {
+            state.cooldown = COOLDOWN_FRAMES; // Activar cooldown
+            state.lastX = -1; // Resetear posición
+            return { type: 'swipe', hand: hand, direction: 'left' };
+        }
+    }
+
+    // 5. Guardar la posición actual para el próximo frame
+    state.lastX = handX;
     return null;
-
-
-// --- Funciones auxiliares ---
-function distance2D(p1, p2) {
-    const dx = p1.x - p2.x;
-    const dy = p1.y - p2.y;
-    return Math.hypot(dx, dy);
 }
 
-function midpoint2D(p1, p2) {
-    return { x: (p1.x + p2.x) * 0.5, y: (p1.y + p2.y) * 0.5 };
+// --- 7. NUEVA FUNCIÓN AUXILIAR ---
+/**
+ * Revisa si la mano está extendida (palma abierta).
+ * Compara la distancia Y de las puntas de los dedos con la palma.
+ */
+function isHandOpen(landmarks) {
+    const palm = landmarks[9];      // Base del dedo medio
+    const middleTip = landmarks[12]; // Punta del dedo medio
+    const pinkyTip = landmarks[20];  // Punta del meñique
+
+    const distMiddle = Math.abs(palm.y - middleTip.y);
+    const distPinky = Math.abs(palm.y - pinkyTip.y);
+    
+    // Si la distancia 'y' es grande, los dedos están extendidos
+    return distMiddle > OPEN_PALM_THRESHOLD && distPinky > OPEN_PALM_THRESHOLD;
 }
-
-
-}
-

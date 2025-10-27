@@ -63,22 +63,29 @@ function prevSlide() {
 socket.on('control-object', (data) => {
     console.log("Gesto recibido:", data);
 
-    // Traduce los datos del gesto en acciones
-    switch (data.type) {
-        case 'pinch_move':
+    // Solo reaccionar a gestos de 'swipe'
+    if (data.type === 'swipe') {
+
+        // --- LÓGICA DE TU SOLICITUD ---
+
+        // "si la mano derecha... va a la izquierda o deliza hacia la derecha cambia la diapos"
+        if (data.hand === 'Right') {
             if (data.direction === 'right') {
-                console.log("Acción: Siguiente slide");
+                console.log("Acción: Siguiente slide (Mano Derecha)");
                 nextSlide();
             } else if (data.direction === 'left') {
-                console.log("Acción: Anterior slide");
+                console.log("Acción: Anterior slide (Mano Derecha)");
                 prevSlide();
             }
-            break;
-        
-        case 'pinch':
-            // Podrías usar el pinch para algo, como un puntero láser virtual
-            // Por ahora no hace nada.
-            break;
+        }
+
+        // "y si la mano izquierda va para la derecha"
+        if (data.hand === 'Left' && data.direction === 'right') {
+            console.log("Acción: Siguiente slide (Mano Izquierda)");
+            nextSlide();
+        }
+
+        // (Nota: Un swipe a la izquierda con la mano izquierda no hará nada)
     }
 });
 
