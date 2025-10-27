@@ -7,6 +7,9 @@
 // --- 1. IMPORTACIONES ---
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+//MULTIMANOS
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+
 import {
   HandLandmarker,
   FilesetResolver
@@ -18,6 +21,9 @@ class HandArApp {
      * Inicializa la aplicación de AR
      */
     constructor() {
+       // 
+       this.MAX_HANDS = 2;
+       
         // MediaPipe
         this.handLandmarker = undefined;
         this.webcamRunning = false;
@@ -30,6 +36,9 @@ class HandArApp {
         this.model = null;
         this.mixer = null;
         this.clock = new THREE.Clock();
+
+        this.modelPool = []; // Pool de calaveras
+        this.mixerPool = []; // Pool de mixers de animación
         
         // Lógica de Cámara
         this.videoDevices = [];
@@ -88,9 +97,9 @@ class HandArApp {
                 delegate: "GPU"
             },
             runningMode: "VIDEO",
-            numHands: 1
+            numHands: this.MAX_HANDS
         });
-        console.log("HandLandmarker listo.");
+        console.log(`HandLandmarker listo (detectando ${this.MAX_HANDS} manos).`);
     }
 
     async getCameraDevices() {
@@ -151,34 +160,45 @@ class HandArApp {
         console.log("Three.js listo.");
     }
 
-    async loadModel() {
-        return new Promise((resolve, reject) => {
-            const loader = new GLTFLoader();
-            loader.load('/models/modelo.glb', (gltf) => {
-                this.model = gltf.scene;
-                
-                const initialScale = 0.2;
-                this.model.scale.set(initialScale, initialScale, initialScale);
-                this.model.visible = false;
-                this.scene.add(this.model);
-                console.log("Modelo cargado.");
+async loadModel() {
+    return new Promise((resolve, reject) =>     {
+        const loader = new GLTFLoader();
+        loader.load('/models/modelo.glb', (gltf) => {
+            
+            console.log("Modelo base cargado. Creando pool...");
+            
+            // Preparamos las animaciones si existen
+            const animations = gltf.animations;
 
-                if (gltf.animations && gltf.animations.length) {
-                    console.log("Animaciones encontradas.");
-                    this.mixer = new THREE.AnimationMixer(this.model);
-                    const action = this.mixer.clipAction(gltf.animations[0]);
+            for (let i = 0; i < this.MAX_HANDS; i++) {
+                // Clonamos el modelo usando SkeletonUtils
+                const newModel = SkeletonUtils.clone(gltf.scene);
+                
+                const initialScale = 0.2; // El valor que te funcionó
+                newModel.scale.set(initialScale, initialScale, initialScale);
+                newModel.visible = false; // Oculto por defecto
+                
+                this.scene.add(newModel);
+                this.modelPool.push(newModel); // Añadir al pool de modelos
+                
+                // Clonar animaciones para este modelo
+                if (animations && animations.length) {
+                    const newMixer = new THREE.AnimationMixer(newModel);
+                    const action = newMixer.clipAction(animations[0]);
                     action.play();
-                } else {
-                    console.log("El modelo no tiene animaciones.");
+                    this.mixerPool.push(newMixer); // Añadir al pool de mixers
                 }
-                
-                // Actualizar stats (bonus)
-                this.updateTriangleStats();
-                
-                resolve();
-            }, undefined, reject);
-        });
-    }
+            }
+            
+            console.log(`Pool de ${this.MAX_HANDS} modelos creado.`);
+            
+            // Actualizar stats (ahora suma los triángulos de todos los clones)
+            this.updateTriangleStats();
+            
+            resolve();
+        }, undefined, reject);
+    });
+}
 
     setupEventListeners() {
         // Botón de cambiar cámara
@@ -285,7 +305,8 @@ class HandArApp {
         // Bucle continuo
         requestAnimationFrame(() => this.predictWebcam());
 
-        if (!this.webcamRunning || !this.model || !this.handLandmarker) {
+        // ¡CORRECCIÓN 1! Comprobar el POOL, no this.model
+        if (!this.webcamRunning || this.modelPool.length === 0 || !this.handLandmarker) {
             return;
         }
 
@@ -300,55 +321,70 @@ class HandArApp {
             const results = await this.handLandmarker.detectForVideo(this.video, startTimeMs);
             this.renderer.clear();
 
+            // --- ¡CORRECCIÓN 2! Lógica de Bucle Multi-Mano ---
+
+            // 1. Ocultar todos los modelos del pool
+            for (const model of this.modelPool) {
+                model.visible = false;
+            }
+
+            // 2. Recorrer las manos detectadas
             if (results.landmarks && results.landmarks.length > 0) {
-                const landmarks = results.landmarks[0];
+                
+                // Iteramos sobre CADA mano detectada (i = 0, i = 1, ...)
+                for (let i = 0; i < results.landmarks.length; i++) {
+                    const landmarks = results.landmarks[i];
+                    
+                    const handedness = results.handednesses[i][0].categoryName;
+                    // Obtenemos el modelo correspondiente (mano 0 -> modelo 0, mano 1 -> modelo 1)
+                    const model = this.modelPool[i]; 
 
-                if (this.isHandPalmUp(landmarks)) {
-                    this.model.visible = true;
+                    // Aplicamos la lógica A ESE MODELO
+                    if (this.isHandPalmUp(landmarks)) {
+                        model.visible = true; // <-- Usamos model (minúscula)
 
-                    const palmPos = landmarks[9];
-                    const x = this.isFrontCamera ? (1.0 - palmPos.x) * 2 - 1 : palmPos.x * 2 - 1;
-                    const y = -(palmPos.y * 2 - 1);
-                    
-                    const vector = new THREE.Vector3(x, y, 0.5);
-                    vector.unproject(this.camera);
-                    
-                    this.model.position.set(vector.x, vector.y, vector.z);
-                    
-
-                        // --- ¡CORRECCIÓN DE ROTACIÓN! ---
-                    
-                    // 1. Rotación base: Hacer que la calavera "se siente"
-                    // La rotamos 90 grados (PI/2) sobre el eje X.
-                    // Esto hace que "mire hacia adelante" en lugar de "hacia arriba".
-                    this.model.rotation.x = Math.PI / 2; // 90 grados
-                    
-                    // 2. Reseteo: Nos aseguramos de que no esté girada en Y
-                    this.model.rotation.y = (3 *  Math.PI)/2 ; 
-
-                    // 3. Rotación de la mano: Alinear con los dedos
-                    // (Este es tu código anterior)
-                    const wrist = landmarks[0];
-                    const deltaX_world = this.isFrontCamera ? (palmPos.x - wrist.x) * -1 : (palmPos.x - wrist.x);
-                    const deltaY_world = palmPos.y - wrist.y;
-                    const angle = Math.atan2(deltaY_world, deltaX_world) + (Math.PI / 2);
-                    
-                    // 4. Aplicar la rotación de la mano en el eje Z (giro)
-                    this.model.rotation.z = angle;
-                    // --- FIN DE LA CORRECCIÓN ---
-
-                } else {
-                    this.model.visible = false;
+                        const palmPos = landmarks[9];
+                        const x = this.isFrontCamera ? (1.0 - palmPos.x) * 2 - 1 : palmPos.x * 2 - 1;
+                        
+                        const y = -(palmPos.y * 2 - 1);
+                        
+                        const vector = new THREE.Vector3(x, y, 0.5);
+                        vector.unproject(this.camera);
+                        
+                        model.position.set(vector.x, vector.y, vector.z); // <-- Usamos model
+                        
+                        // --- Rotación ---
+                        // 1. Rotación base: "Levantar" la calavera
+                        model.rotation.x = Math.PI / 2; // 90 grados en X
+                        
+                        // 2. Rotación Y: (Tu rotación personalizada para que mire al frente)
+                        if (handedness === "Left") {
+                            model.rotation.y = (3 * Math.PI) / 2; // 270 grados
+                        } else { // handedness === "Right"
+                            model.rotation.y = Math.PI / 2; // 90 grados
+                        }
+                        
+                        // 3. Rotación Z: Alinear con los dedos
+                        const wrist = landmarks[0];
+                        const deltaX_world = this.isFrontCamera ? (palmPos.x - wrist.x) * -1 : (palmPos.x - wrist.x);
+                        const deltaY_world = palmPos.y - wrist.y;
+                        const angle = Math.atan2(deltaY_world, deltaX_world) + (Math.PI / 2);
+                        
+                        model.rotation.z = angle; // <-- Usamos model
+                    }
+                    // Si isHandPalmUp es falso, el 'model' [i] se queda invisible.
                 }
-            } else {
-                this.model.visible = false;
             }
             
+            // --- FIN LÓGICA MULTI-MANO ---
+            
+            // ¡CORRECCIÓN 3! Actualizar TODAS las animaciones en el POOL
             const delta = this.clock.getDelta();
-            if (this.mixer) {
-                this.mixer.update(delta);
+            for (const mixer of this.mixerPool) {
+                mixer.update(delta);
             }
             
+            // 4. Renderizar la escena (solo se hace 1 vez)
             this.renderer.render(this.scene, this.camera);
         }
     }
@@ -379,19 +415,24 @@ class HandArApp {
         }
     }
 
-    updateTriangleStats() {
-        if (this.model && this.trianglesCounterEl) {
+   updateTriangleStats() {
+        if (this.modelPool.length > 0 && this.trianglesCounterEl) {
             let totalTriangles = 0;
-            this.model.traverse((child) => {
-                if (child.isMesh && child.geometry) {
-                    const geometry = child.geometry;
-                    if (geometry.index) {
-                        totalTriangles += geometry.index.count / 3;
-                    } else {
-                        totalTriangles += geometry.attributes.position.count / 3;
+            
+            // Recorremos el pool y sumamos los triángulos de cada modelo
+            for (const model of this.modelPool) {
+                model.traverse((child) => {
+                    if (child.isMesh && child.geometry) {
+                        const geometry = child.geometry;
+                        if (geometry.index) {
+                            totalTriangles += geometry.index.count / 3;
+                        } else {
+                            totalTriangles += geometry.attributes.position.count / 3;
+                        }
                     }
-                }
-            });
+                });
+            }
+            // El total será (triángulos de 1 modelo) * MAX_HANDS
             this.trianglesCounterEl.textContent = Math.floor(totalTriangles);
         }
     }
