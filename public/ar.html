@@ -45,17 +45,30 @@
             position: absolute;
             top: 50%;
             left: 50%;
-            transform: translate(-50%, -50%) scaleX(-1); /* Efecto espejo */
+            
+            /* --- ¡CORRECCIÓN CSS 1! --- */
+            /* ¡Borramos el 'scaleX(-1)' de aquí! */
+            /* El JS lo controlará con la clase .mirrored */
+            transform: translate(-50%, -50%); 
+            
             width: 100%;
             height: 100%;
-            /* 'cover' asegura que llene la pantalla, 'contain' es otra opción */
             object-fit: cover; 
+        }
+
+        .mirrored {
+            transform: translate(-50%, -50%) scaleX(-1);
         }
     </style>
 </head>
 <body>
 
     <div id="ar-container">
+        <div style="position: absolute; top: 10px; left: 10px; z-index: 100; color: white; background: rgba(0,0,0,0.5); padding: 5px; border-radius: 3px; font-family: monospace;">
+            FPS: <span id="fps-counter">0</span><br>
+            Triángulos: <span id="triangles-counter">0</span>
+        </div>
+
         <video id="webcam" autoplay playsinline></video>
         
         <canvas id="ar-canvas"></canvas>
