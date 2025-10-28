@@ -25,16 +25,22 @@ let drawingUtils = null;
 
 let isLocked = false;
 let lockCooldown = 0;
-const LOCK_COOLDOWN_FRAMES = 10;
+const LOCK_COOLDOWN_FRAMES = 40;
+
+let fistHoldCounter = 0; // Contador de frames que llevamos con 2 puños
+const LOCK_HOLD_FRAMES_REQUIRED = 15; // 3 segundos (60 frames @ 20fps)
+
 let currentTarget = 'lienzo';
 
 let targetLienzoButton;
 let targetSlidesButton;
 
-let rightHandState = { lastX: -1, lastY: -1, cooldown: 0 };
-let leftHandState = { lastX: -1, lastY: -1, cooldown: 0 };
+let rightHandState = { lastX: -1, lastY: -1, cooldown: 0, fistLastX: -1, lastState: 'open' };
+let leftHandState = { lastX: -1, lastY: -1, cooldown: 0, fistLastX: -1, lastState: 'open' };
 const SWIPE_THRESHOLD = 0.07;
 const COOLDOWN_FRAMES = 5;
+const FIST_MOVE_THRESHOLD = 0.01; // Sensibilidad mínima para detectar movimiento del puño
+
 
 // --- CARGAR DESDE OBJETO GLOBAL ---
 // Comprobación segura de que las librerías existen
@@ -126,9 +132,9 @@ async function runDemo() {
             },
             runningMode: "VIDEO",
             numHands: 2,
-            minHandDetectionConfidence: 0.6,
-            minHandPresenceConfidence: 0.6,
-            minTrackingConfidence: 0.6,
+            minHandDetectionConfidence: 0.7,
+            minHandPresenceConfidence: 0.7,
+            minTrackingConfidence: 0.7,
         });
 
         drawingUtils = new DrawingUtils(canvasCtx);
@@ -224,121 +230,187 @@ function drawResults(results) {
 
 // --- PROCESAR GESTOS ---
 function processGestures(results) {
-    // ❌ QUITAR EL BLOQUE if (document.readyState...) DE AQUÍ
+    if (!socket) return;
 
-    if (!socket) return;
+    let detectedGestureData = null;
+    let currentGestureText = "🙌 No se detectan manos...";
+    let fistCount = 0;
 
-    let detectedGestureData = null;
-    let currentGestureText = "🙌 No se detectan manos...";
-    let fistCount = 0;
+    // --- 1. REDUCIR COOLDOWNS ---
+    rightHandState.cooldown = Math.max(0, rightHandState.cooldown - 1);
+    leftHandState.cooldown = Math.max(0, leftHandState.cooldown - 1);
+    lockCooldown = Math.max(0, lockCooldown - 1);
 
-    if (rightHandState.cooldown > 0) rightHandState.cooldown--;
-    if (leftHandState.cooldown > 0) leftHandState.cooldown--;
-    if (lockCooldown > 0) lockCooldown--;
+    const handsDetected = results?.landmarks?.length > 0;
 
-    if (results && results.landmarks && results.landmarks.length > 0) {
-        currentGestureText = "🖐️ Mano detectada";
+    // --- 2. PROCESAR SI HAY MANOS ---
+    if (handsDetected) {
+        currentGestureText = "🖐️ Mano detectada";
 
-        for (let i = 0; i < results.landmarks.length; i++) {
-            if (results.handedness && results.handedness[i] && results.handedness[i][0]) {
-                const landmarks = results.landmarks[i];
-                const handState = detectFistOrOpen(landmarks);
-                if (handState === 'fist') {
-                    fistCount++;
-                }
-            }
-        }
+        // --- 3. CONTAR PUÑOS ---
+        // (Tu lógica de FIST_CONFIDENCE_THRESHOLD es buena, pero no estaba en este código)
+        for (const landmarks of results.landmarks) {
+            if (detectFistOrOpen(landmarks) === 'fist') fistCount++;
+        }
 
-        if (fistCount === 2 && lockCooldown === 0) {
-            isLocked = !isLocked;
-            lockCooldown = LOCK_COOLDOWN_FRAMES;
-            currentGestureText = isLocked ? "🔒 Bloqueado" : "🔓 Desbloqueado";
-            console.log(`Sistema ${currentGestureText}`);
-            if (gestureStatus && currentGestureText !== lastGestureType) {
-                gestureStatus.innerText = currentGestureText;
+        // --- 4. GESTO DE BLOQUEO (DOBLE PUÑO) ---
+        if (fistCount === 2 && lockCooldown === 0) {
+            // Si tenemos 2 puños, empezamos a contar
+            fistHoldCounter++;
+
+            // Calcular el progreso para mostrarlo en pantalla
+            let chargePercent = Math.round((fistHoldCounter / LOCK_HOLD_FRAMES_REQUIRED) * 100);
+            currentGestureText = `⏳ Bloqueando (${chargePercent}%)`;
+
+            // ¿Llegamos al tiempo requerido?
+            if (fistHoldCounter >= LOCK_HOLD_FRAMES_REQUIRED) {
+                isLocked = !isLocked;
+                lockCooldown = LOCK_COOLDOWN_FRAMES; // Activar el cooldown de 2 seg
+                currentGestureText = isLocked ? "🔒 Bloqueado" : "🔓 Desbloqueado";
+                console.log(`Sistema ${currentGestureText} (¡3 seg. completados!)`);
+
+                // Resetear todo para el próximo gesto
+                fistHoldCounter = 0;
+                resetHandStates(); 
+                lastGestureData = null;
+                if (gestureStatus) gestureStatus.innerText = currentGestureText;
                 lastGestureType = currentGestureText;
+                return; // Salir del procesamiento de este frame
             }
-            lastGestureData = null;
-            return;
-        }
 
-        if (isLocked) {
-            currentGestureText = "🔒 Bloqueado";
-            detectedGestureData = null;
-        } else if (lockCooldown === 0) {
-            for (let i = 0; i < results.landmarks.length; i++) {
-                if (results.handedness && results.handedness[i] && results.handedness[i][0]) {
-                    const landmarks = results.landmarks[i];
-                    const hand = results.handedness[i][0].categoryName;
-
-                    if (currentTarget === 'slides') {
-                        const swipeGesture = detectSwipe(landmarks, hand);
-                        if (swipeGesture) {
-                            detectedGestureData = swipeGesture;
-                            currentGestureText = `👉 ${hand} ${swipeGesture.direction} (a Slides)`;
-                            break;
-                        }
-                    } else if (currentTarget === 'lienzo') {
-                        const handState = detectFistOrOpen(landmarks);
-                        if (handState === 'fist') {
-                            if (!detectedGestureData) {
-                                detectedGestureData = { type: 'fist', hand: hand };
-                                currentGestureText = `👊 ${hand} Puño (a Lienzo)`;
-                            }
-                        }
-                    }
-                }
-            }
-            if (!detectedGestureData && currentTarget === 'lienzo') {
-                detectedGestureData = { type: 'open' };
-            }
         } else {
-            currentGestureText = isLocked ? "🔒 Bloqueado" : "🔓 Desbloqueado";
-            detectedGestureData = null;
+            // Si el gesto se rompe (menos de 2 puños), reiniciamos el contador
+            fistHoldCounter = 0;
         }
-    } else {
-        if (isLocked) {
-            currentGestureText = "🔒 Bloqueado (sin manos)";
-        } else if (currentTarget === 'lienzo') {
-            detectedGestureData = { type: 'open' };
-        }
-    }
+        // --- 5. SI ESTÁ BLOQUEADO ---
+        if (isLocked) {
+            currentGestureText = "🔒 Bloqueado";
+            resetHandStates();
+        } 
 
-    const dataChanged = JSON.stringify(detectedGestureData) !== JSON.stringify(lastGestureData);
+        // --- 6. PROCESAR GESTOS SI NO ESTÁ BLOQUEADO ---
+        else {
+            for (let i = 0; i < results.landmarks.length; i++) {
+                const landmarks = results.landmarks[i];
+                const handInfo = results.handedness[i]?.[0];
+                if (!handInfo) continue;
 
-    if (!isLocked && detectedGestureData && dataChanged) {
-        let eventName = '';
-        if (currentTarget === 'slides' && detectedGestureData.type === 'swipe') {
-            eventName = 'gesture-data';
-        } else if (currentTarget === 'lienzo' && (detectedGestureData.type === 'fist' || detectedGestureData.type === 'open')) {
-            eventName = 'hand-state';
-        }
-        if (eventName) {
-            console.log(`📡 Enviando [${eventName}] a ${currentTarget}:`, detectedGestureData);
-            socket.emit(eventName, detectedGestureData);
-            lastGestureData = { ...detectedGestureData };
-        } else {
-            if (dataChanged) lastGestureData = null;
-        }
-    } else if (!isLocked && !detectedGestureData && lastGestureData !== null && currentTarget === 'lienzo') {
-        if (lastGestureData.type !== 'open') {
-            console.log(`📡 Enviando [hand-state] a ${currentTarget}: { type: 'open' } (implícito)`);
-            socket.emit('hand-state', { type: 'open' });
-        }
-        lastGestureData = { type: 'open' };
-    } else if (!isLocked && !(results && results.landmarks && results.landmarks.length > 0) && currentTarget === 'lienzo' && lastGestureData?.type !== 'open') {
-        console.log(`📡 Enviando [hand-state] a ${currentTarget}: { type: 'open' } (sin manos)`);
-        socket.emit('hand-state', { type: 'open' });
-        lastGestureData = { type: 'open' };
-    } else if (isLocked && lastGestureData !== null) {
-        lastGestureData = null;
-    }
+                const hand = handInfo.categoryName;
+                const handStateRef = (hand === 'Right') ? rightHandState : leftHandState;
+                
+                // --- CAMBIO: Obtener estado actual y anterior ---
+                const currentState = detectFistOrOpen(landmarks);
+                const lastState = handStateRef.lastState;
 
-    if (gestureStatus && currentGestureText !== lastGestureType) {
-        gestureStatus.innerText = currentGestureText;
-        lastGestureType = currentGestureText;
-    }
+                if (currentState === 'fist') {
+                    // --- LÓGICA LIENZO (INTACTA) ---
+                    if (currentTarget === 'lienzo') {
+                        const currentFistX = landmarks[9].x; 
+                        const lastX = handStateRef.fistLastX;
+                        if (lastX !== -1) {
+                            const deltaX = currentFistX - lastX;
+                            if (Math.abs(deltaX) > FIST_MOVE_THRESHOLD) {
+                                console.log(`✊ ${hand} DeltaX: ${deltaX.toFixed(4)}`);
+                                detectedGestureData = { type: 'fist_move', hand, deltaX };
+                                currentGestureText = `✊ Moviendo ${hand} (${deltaX > 0 ? '→' : '←'})`;
+                            }
+                        }
+                        handStateRef.fistLastX = currentFistX;
+                    } else {
+                        handStateRef.fistLastX = -1; // Reset si no es lienzo
+                    }
+                } 
+                else { 
+                    // --- Mano abierta (currentState === 'open') ---
+                    if (handStateRef.fistLastX !== -1) handStateRef.fistLastX = -1;
+
+                    // --- CAMBIO: LÓGICA 'FIST-TO-OPEN' (para slides) ---
+                    if (currentTarget === 'slides' && !detectedGestureData) {
+                        // Si el estado anterior era 'fist' y el actual es 'open'
+                        if (lastState === 'fist') {
+                            detectedGestureData = { type: 'fist_to_open', hand: hand };
+                            currentGestureText = `✋ ¡${hand} Abierta! (Slides)`;
+                            
+                            // --- ¡LA SOLUCIÓN! ---
+                            // Actualiza el estado ANTES de salir del bucle
+                            handStateRef.lastState = currentState; 
+                            break; 
+                        }
+                    }
+                    // --- FIN DEL CAMBIO ---
+                }
+
+                // --- CAMBIO: Actualizar el estado de la mano para el próximo frame ---
+                handStateRef.lastState = currentState;
+
+                // (Se eliminó la lógica de 'detectSwipe' de aquí)
+            }
+
+            // --- Si no hay gesto, enviar 'open' (para lienzo) ---
+            if (!detectedGestureData && currentTarget === 'lienzo') {
+                detectedGestureData = { type: 'open' };
+                resetFistPositions();
+            }
+        }
+
+    } 
+    // --- 7. SIN MANOS DETECTADAS ---
+    else {
+        if (isLocked) {
+            currentGestureText = "🔒 Bloqueado (sin manos)";
+        }
+        resetHandStates();
+    }
+
+    // --- 8. ENVÍO DE DATOS (MODIFICADO) --- 
+    const dataChanged = JSON.stringify(detectedGestureData) !== JSON.stringify(lastGestureData);
+
+    if (!isLocked && detectedGestureData ) {
+        // --- CAMBIO: Actualizado para 'fist_to_open' ---
+        const isSlideGesture = currentTarget === 'slides' && detectedGestureData.type === 'fist_to_open';
+        const isLienzoGesture = currentTarget === 'lienzo' && ['fist_move', 'open'].includes(detectedGestureData.type);
+        // --- FIN DEL CAMBIO ---
+
+        if (isSlideGesture || isLienzoGesture) {
+            console.log(`📡 Enviando [gesture-data] a ${currentTarget}:`, detectedGestureData);
+            socket.emit('gesture-data', detectedGestureData);
+            lastGestureData = { ...detectedGestureData };
+        }
+    }
+    // Enviar 'open' implícito si antes había otro gesto
+    else if (!isLocked && !detectedGestureData && lastGestureData?.type !== 'open' && currentTarget === 'lienzo') {
+        const openData = { type: 'open' };
+        console.log(`📡 Enviando [gesture-data] a ${currentTarget}: { type: 'open' }`);
+        socket.emit('gesture-data', openData);
+        lastGestureData = openData;
+    }
+    // Reset si bloqueado
+    else if (isLocked && lastGestureData) {
+        lastGestureData = null;
+    }
+
+    // --- 9. ACTUALIZAR UI ---
+    if (gestureStatus && currentGestureText !== lastGestureType) {
+        gestureStatus.innerText = currentGestureText;
+        lastGestureType = currentGestureText;
+    }
+
+    // --- Funciones internas auxiliares (sin cambios) ---
+    function resetFistPositions() {
+        rightHandState.fistLastX = -1;
+        leftHandState.fistLastX = -1;
+    }
+
+    function resetHandStates() {
+        resetFistPositions();
+        rightHandState.lastX = -1;
+        leftHandState.lastX = -1;
+        // --- CAMBIO: Resetear también lastState ---
+        rightHandState.lastState = 'open';
+        leftHandState.lastState = 'open';
+    }
 }
+
 
 // --- FUNCIÓN DETECTAR SWIPE ---
 function detectSwipe(landmarks, hand) {

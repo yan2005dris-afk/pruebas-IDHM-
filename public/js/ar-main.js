@@ -142,13 +142,13 @@ class HandArApp {
 
     setupThreeJS() {
         this.scene = new THREE.Scene();
-        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.0001, 100);
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 100);
         this.camera.position.z = 5;
 
         this.renderer = new THREE.WebGLRenderer({
             canvas: this.canvas,
             alpha: true
-        });
+        });  
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.setSize(window.innerWidth, window.innerHeight);
 
@@ -174,7 +174,7 @@ async loadModel() {
                 // Clonamos el modelo usando SkeletonUtils
                 const newModel = SkeletonUtils.clone(gltf.scene);
                 
-                const initialScale = 0.05; // El valor que te funcionó
+                const initialScale = 0.5; // El valor que te funcionó
                 newModel.scale.set(initialScale, initialScale, initialScale);
                 newModel.visible = false; // Oculto por defecto
                 
@@ -371,7 +371,7 @@ async loadModel() {
                         
                         // ¡ESTE ES EL NÚMERO CLAVE PARA AJUSTAR!
                         // Convierte el "tamaño de mano" (ej: 0.15) a la "escala del modelo"
-                        const scaleMultiplier = 0.015 // <-- ¡AJUSTA ESTE NÚMERO! (Prueba 0.3, 0.5, 1.0)
+                        const scaleMultiplier = 0.3 // <-- ¡AJUSTA ESTE NÚMERO! (Prueba 0.3, 0.5, 1.0)
 
                         const scale = handSize * scaleMultiplier;
                         model.scale.set(scale, scale, scale);

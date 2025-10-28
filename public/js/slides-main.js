@@ -13,6 +13,7 @@ const SLIDES = [
 let currentSlide = 0;
 let isFullscreen = false;
 let autoAdvanceInterval = null;
+//let gestureCooldown = false; // <-- AÑADE ESTA LÍNEA
 
 const slideImage = document.getElementById('slide-image');
 const slideNumberText = document.getElementById('slide-number');
@@ -167,41 +168,32 @@ function createPlaceholderSlide(number) {
     return canvas.toDataURL();
 }
 
-// --- 6. ESCUCHAR GESTOS Y CONTROLES ---
+// --- 6. ESCUCHAR GESTOS Y CONTROLES (CON LÓGICA 'FIST-TO-OPEN') ---
 socket.on('control-object', (data) => {
     console.log("🤖 Gesto recibido:", data);
 
-    if (data.type === 'swipe') {
-        switch (data.direction) {
-            case 'left':
-                if (data.hand === 'Right') {
-                    console.log("➡️ Siguiente slide (Mano Derecha → Izquierda)");
-                    nextSlide();
-                }
-                break;
-                
-            case 'right':
-                if (data.hand === 'Left') {
-                    console.log("⬅️ Anterior slide (Mano Izquierda → Derecha)");
-                    prevSlide();
-                }
-                break;
-                
-            case 'up':
-                console.log("🔍 Toggle fullscreen");
-                toggleFullscreen();
-                break;
-                
-            case 'down':
-                console.log("🔄 Reset a slide 1");
-                goToSlide(0);
-                break;
+    // --- (NUEVO) ESCUCHAR 'FIST-TO-OPEN' ---
+    if (data.type === 'fist_to_open') {
+        
+        if (data.hand === 'Right') {
+            console.log("➡️ Siguiente slide (Mano Derecha Abierta)");
+            nextSlide();
+        } 
+        else if (data.hand === 'Left') {
+            console.log("⬅️ Anterior slide (Mano Izquierda Abierta)");
+            prevSlide();
         }
-    } else if (data.type === 'click') {
+    } 
+    // --- FIN DEL CAMBIO ---
+    
+    // (Mantenemos la lógica de 'click')
+    else if (data.type === 'click') {
         console.log("👆 Click detectado - siguiente slide");
         nextSlide();
     }
 });
+
+
 
 // --- 7. CONTROLES DE TECLADO ---
 document.addEventListener('keydown', (e) => {
@@ -383,86 +375,3 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
-
-/*
-
-// --- 1. CONFIGURACIÓN ---
-// Lista de imágenes
-const SLIDES = [
-    '/slides/1.jpg',
-    '/slides/2.jpg',
-    '/slides/3.jpg',
-    '/slides/4.jpg',
-    '/slides/5.jpg',
-    '/slides/6.jpg'
-];
-
-// --- 2. VARIABLES GLOBALES Y ELEMENTOS DEL DOM ---
-let currentSlide = 0;
-const slideImage = document.getElementById('slide-image');
-const slideNumberText = document.getElementById('slide-number');
-
-// --- 3. CONEXIÓN AL SERVIDOR DE SOCKET.IO ---
-const socket = io();
-console.log("Conectando a Socket.io (Diapositivas)...");
-
-socket.on("connect", () => {
-    console.log("¡Conectado al servidor con ID:", socket.id);
-});
-
-// --- 4. LÓGICA DE DIAPOSITIVAS ---
-function updateSlide() {
-    // Evitar índices fuera de rango
-    if (currentSlide < 0) currentSlide = 0;
-    if (currentSlide >= SLIDES.length) currentSlide = SLIDES.length - 1;
-
-    // Actualizar imagen y texto
-    slideImage.src = SLIDES[currentSlide];
-    slideNumberText.innerText = `${currentSlide + 1} / ${SLIDES.length}`;
-    console.log(`Mostrando slide ${currentSlide}`);
-}
-
-function nextSlide() {
-    if (currentSlide < SLIDES.length - 1) {
-        currentSlide++;
-        updateSlide();
-    }
-}
-
-function prevSlide() {
-    if (currentSlide > 0) {
-        currentSlide--;
-        updateSlide();
-    }
-}
-
-// --- 5. ESCUCHAR GESTOS ---
-socket.on('control-object', (data) => {
-    console.log("Gesto recibido:", data);
-
-    if (data.type === 'swipe') {
-        // ✅ Lógica correcta según tu intención:
-
-        // Mano derecha movida hacia la IZQUIERDA → siguiente slide
-        if (data.hand === 'Right' && data.direction === 'left') {
-            console.log("➡️ Siguiente slide (Mano Derecha → Izquierda)");
-            nextSlide();
-        }
-
-        // Mano izquierda movida hacia la DERECHA → anterior slide
-        else if (data.hand === 'Left' && data.direction === 'right') {
-            console.log("⬅️ Anterior slide (Mano Izquierda → Derecha)");
-            prevSlide();
-        }
-    }
-});
-
-// --- 6. INICIALIZACIÓN ---
-updateSlide();
-
-// (Opcional) Controles con teclado
-window.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowRight') nextSlide();
-    else if (e.key === 'ArrowLeft') prevSlide();
-});
-*/

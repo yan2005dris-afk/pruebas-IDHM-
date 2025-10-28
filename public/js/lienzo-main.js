@@ -12,6 +12,9 @@ let model; // Esta variable guardará nuestro objeto 3D
 const canvas = document.getElementById('3d-canvas');
 let isRotatingWithFist = false; // Nueva variable de estado
 
+
+const ROTATION_SPEED_FACTOR = 5; // Ajusta qué tan rápido rota el modelo con el movimiento
+
 // --- 3. CONEXIÓN AL SERVIDOR DE SOCKET.IO ---
 const socket = io();
 console.log("Conectando a Socket.io (Lienzo)...");
@@ -105,7 +108,7 @@ function animate() {
     requestAnimationFrame(animate);
 
     // Actualiza los controles del mouse
-    controls.update();
+    //controls.update();
     
     // Renderiza la escena
     renderer.render(scene, camera);
@@ -121,47 +124,39 @@ function onWindowResize() {
 // --- 5. MÓDULO DE COMUNICACIÓN: ESCUCHAR EVENTOS DE SOCKET.IO ---
 
 function setupSocketListeners() {
-    // --- Listener para SWIPES (si los necesitas en el lienzo) ---
-    socket.on('gesture-data', (data) => {
-        if (!model) return;
-        console.log("Lienzo recibió swipe:", data);
-        // Aquí podrías añadir lógica si un swipe debe hacer algo en el lienzo
-        // Por ejemplo, cambiar de modelo, etc.
-        // if (data.type === 'swipe' && data.direction === 'up') { ... }
-    });
-
-    // --- Listener para ESTADO DE LA MANO (Puño/Abierta) ---
-    socket.on('hand-state', (data) => {
-        if (!model) return;
-        console.log("Lienzo recibió estado mano:", data);
-
-        if (data.type === 'fist') {
-            // Si detecta puño y NO estábamos rotando ya
-            if (!isRotatingWithFist) {
-                console.log("👊 Activando rotación por puño");
-                controls.enabled = true; // Habilita OrbitControls
-                isRotatingWithFist = true;
-            }
-        } else { // Asumimos que cualquier otro estado (o ausencia de señal) es 'open'
-             // Si SÍ estábamos rotando y ahora la mano no es puño
-             if (isRotatingWithFist) {
-                 console.log("🖐️ Desactivando rotación (mano abierta)");
-                 controls.enabled = false; // Deshabilita OrbitControls
-                 isRotatingWithFist = false;
-             }
-        }
-    });
-
-    // Listener antiguo 'control-object' (lo dejamos por si enviabas otros datos)
-    // Ajusta o elimina según necesites. Si 'pinch_hold' ya no se usa, puedes quitarlo.
+    // ÚNICO LISTENER para todos los gestos retransmitidos por el servidor
     socket.on('control-object', (data) => {
-        if (!model) return;
-        // console.log("Lienzo recibió control-object:", data);
-        /*
-        if (data.type === 'pinch_hold') {
-            // ... tu lógica de escalar/rotar con pinch ...
+        if (!model) return; // Salir si el modelo 3D no ha cargado
+
+        // console.log("Lienzo recibió control-object:", data); // Descomenta para depurar
+
+        // Ahora clasificamos el gesto según el 'type'
+        switch (data.type) {
+            case 'fist_move':
+                // Lógica para mover el objeto con el puño
+                const MOVE_SPEED_FACTOR = 4;
+                const MAX_OFFSET = 3;
+                model.position.x += data.deltaX * MOVE_SPEED_FACTOR;
+                model.position.x = Math.max(-MAX_OFFSET, Math.min(model.position.x, MAX_OFFSET));
+                break;
+            
+            case 'open':
+                // Lógica para centrar el objeto con la mano abierta
+                // ¡Cuidado! Tu código usaba 'gsap' sin importarlo, lo que causa un error.
+                // Usa la versión simple (sin GSAP) para asegurar que funcione:
+                model.position.x = 0;
+                
+                // Si quieres la animación suave, DEBES importar GSAP al inicio de tu archivo.
+                // import { gsap } from 'https://cdn.skypack.dev/gsap';
+                // gsap.to(model.position, { x: 0, duration: 0.4, ease: 'power2.out' });
+                break;
+            
+            case 'swipe':
+                // Este evento es para 'slides', pero lo recibes igual.
+                // No hacemos nada con él en el lienzo.
+                // console.log("Swipe ignorado en lienzo");
+                break;
         }
-        */
     });
 }
 
