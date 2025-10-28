@@ -10,6 +10,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 let scene, camera, renderer, controls;
 let model; // Esta variable guardará nuestro objeto 3D
 const canvas = document.getElementById('3d-canvas');
+let isRotatingWithFist = false; // Nueva variable de estado
 
 // --- 3. CONEXIÓN AL SERVIDOR DE SOCKET.IO ---
 const socket = io();
@@ -46,7 +47,7 @@ function init() {
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true; // Efecto de "desaceleración" suave
     controls.dampingFactor = 0.05;
-
+    //controls.enabled = false;
     // Cargar el modelo 3D
     loadModel();
 
@@ -120,33 +121,47 @@ function onWindowResize() {
 // --- 5. MÓDULO DE COMUNICACIÓN: ESCUCHAR EVENTOS DE SOCKET.IO ---
 
 function setupSocketListeners() {
-    // Escucha el evento 'control-object' que envía el servidor
-    socket.on('control-object', (data) => {
-        
-        // Solo actúa si el modelo 3D ya se ha cargado
-        if (!model) {
-            return;
-        }
+    // --- Listener para SWIPES (si los necesitas en el lienzo) ---
+    socket.on('gesture-data', (data) => {
+        if (!model) return;
+        console.log("Lienzo recibió swipe:", data);
+        // Aquí podrías añadir lógica si un swipe debe hacer algo en el lienzo
+        // Por ejemplo, cambiar de modelo, etc.
+        // if (data.type === 'swipe' && data.direction === 'up') { ... }
+    });
 
-        // Traduce los datos del gesto en acciones 3D
-        if (data.type === 'pinch_hold') {
-            
-            // --- Acción 1: Escalar con la distancia del pellizco ---
-            // Mapeamos la distancia del pellizco (ej. 0.01 a 0.05) a una escala (ej. 2.0 a 0.5)
-            // Cuando más cerca los dedos (0.01), más grande el objeto (2.0)
-            // Cuando más lejos los dedos (0.05), más pequeño el objeto (0.5)
-            const newScale = mapRange(data.distance, 0.01, 0.05, 2.0, 0.5);
-            model.scale.set(newScale, newScale, newScale);
-            
-            // --- Acción 2: Rotar con la posición X del pellizco ---
-            // Mapeamos la posición X del pellizco (0.0 a 1.0) a una rotación (ej. -PI a +PI)
-            // 0.0 (izquierda de la cámara) -> rota a la izquierda
-            // 1.0 (derecha de la cámara) -> rota a la derecha
-            // ¡Recordatorio! El video está en modo espejo, pero los datos de MediaPipe
-            // (data.midpoint.x) están normalizados (0.0 = izquierda, 1.0 = derecha).
-            const newRotationY = mapRange(data.midpoint.x, 0.2, 0.8, -Math.PI, Math.PI); // Usamos 0.2-0.8 como "zona activa"
-            model.rotation.y = newRotationY;
+    // --- Listener para ESTADO DE LA MANO (Puño/Abierta) ---
+    socket.on('hand-state', (data) => {
+        if (!model) return;
+        console.log("Lienzo recibió estado mano:", data);
+
+        if (data.type === 'fist') {
+            // Si detecta puño y NO estábamos rotando ya
+            if (!isRotatingWithFist) {
+                console.log("👊 Activando rotación por puño");
+                controls.enabled = true; // Habilita OrbitControls
+                isRotatingWithFist = true;
+            }
+        } else { // Asumimos que cualquier otro estado (o ausencia de señal) es 'open'
+             // Si SÍ estábamos rotando y ahora la mano no es puño
+             if (isRotatingWithFist) {
+                 console.log("🖐️ Desactivando rotación (mano abierta)");
+                 controls.enabled = false; // Deshabilita OrbitControls
+                 isRotatingWithFist = false;
+             }
         }
+    });
+
+    // Listener antiguo 'control-object' (lo dejamos por si enviabas otros datos)
+    // Ajusta o elimina según necesites. Si 'pinch_hold' ya no se usa, puedes quitarlo.
+    socket.on('control-object', (data) => {
+        if (!model) return;
+        // console.log("Lienzo recibió control-object:", data);
+        /*
+        if (data.type === 'pinch_hold') {
+            // ... tu lógica de escalar/rotar con pinch ...
+        }
+        */
     });
 }
 

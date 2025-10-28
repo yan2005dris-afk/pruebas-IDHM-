@@ -1,57 +1,73 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Módulo de Cámara (MediaPipe)</title>
-    <style>
-        body {
-            font-family: sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            background-color: #f0f0f0;
-        }
-        h1 {
-            color: #333;
-        }
-        /* Contenedor para superponer el canvas sobre el video */
-        .video-container {
-            position: relative;
-            width: 640px;
-            height: 480px;
-            border: 2px solid #555;
-            border-radius: 8px;
-            overflow: hidden; /* Para que el video no se salga de los bordes redondeados */
-        }
-        /* El video se verá volteado (espejo) para que sea intuitivo */
-        video, canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            transform: scaleX(-1); /* Efecto espejo */
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Módulo de Cámara (MediaPipe)</title>
+
+  <div id="target-selector" style="margin-top: 15px;">
+    <span>Enviar gestos a:</span>
+    <button id="target-lienzo" class="target-button active">🖼️ Lienzo</button>
+    <button id="target-slides" class="target-button">📄 Slides</button>
+</div>
+
+  <style>
+    body {
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background-color: #f0f0f0;
+    }
+    h1 {
+      color: #333;
+    }
+    .video-container {
+      position: relative;
+      width: 640px;
+      height: 480px;
+      border: 2px solid #555;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    video, canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      transform: scaleX(-1);
+    }
+  </style>
 </head>
 <body>
-    <h1>Módulo de Detección de Gestos</h1>
-    
-    <div class="video-container">
-        <video id="webcam" autoplay playsinline></video>
-        
-        <canvas id="output_canvas" width="640" height="480"></canvas>
-    </div>
-    
-    <p id="gesture-status">Gesto detectado: Ninguno</p>
+  <h1>Módulo de Detección de Gestos</h1>
 
-    <h2 id="connection-status"></h2>
-    
-    <script src="/socket.io/socket.io.js"></script>
-    
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.js"></script>
-    
-    <script src="/js/camera-main.js" type="module"></script>
+  <div class="video-container">
+    <video id="webcam" autoplay playsinline></video>
+    <canvas id="output_canvas" width="640" height="480"></canvas>
+  </div>
+
+  <p id="gesture-status">Gesto detectado: Ninguno</p>
+  <h2 id="connection-status"></h2>
+
+  <!-- Socket.io -->
+  <script src="/socket.io/socket.io.js"></script>
+
+  <!-- ✅ Cargar vision_bundle como módulo -->
+  <script type="module">
+    import {
+      FilesetResolver,
+      HandLandmarker,
+      DrawingUtils,
+    } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs";
+
+    window.FilesetResolver = FilesetResolver;
+    window.HandLandmarker = HandLandmarker;
+    window.DrawingUtils = DrawingUtils;
+  </script>
+
+  <!-- Tu script principal -->
+  <script type="module" src="/js/camera-main.js"></script>
 </body>
 </html>

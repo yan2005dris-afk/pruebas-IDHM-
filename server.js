@@ -13,7 +13,7 @@ const io = new Server(server, {
 });
 
 // Servir archivos estáticos desde la carpeta 'public'
-app.use('/mediapipe', express.static(path.join(__dirname, '/node_modules/@mediapipe/tasks-vision')));
+//app.use('/mediapipe', express.static(path.join(__dirname, '/node_modules/@mediapipe/tasks-vision')));
 
 app.use(express.static('public'));
 

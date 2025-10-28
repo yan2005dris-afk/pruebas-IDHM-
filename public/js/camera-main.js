@@ -1,674 +1,389 @@
-// /public/js/camera-main.js
+console.log("🚀 Inicializando MediaPipe HandLandmarker...");
 
-// Importa las clases necesarias desde el bundle de MediaPipe
-import {
-  HandLandmarker,
-  FilesetResolver
-} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.js";
-
-// --- 1. DEFINICIÓN DE VARIABLES GLOBALES ---
-
-let handLandmarker = undefined;
-let runningMode = "VIDEO";
-let webcamRunning = false;
-let lastVideoTime = -1;
-
-const MAX_FPS = 30;
-let lastInferenceTime = 0;
-let lastEmitTime = 0;
-const EMIT_INTERVAL = 100;
-let lastGestureType = 'Ninguno';
-
-// Variables para gestos mejorados
-let rightHandState = { lastX: -1, lastY: -1, cooldown: 0, gestureHistory: [] };
-let leftHandState = { lastX: -1, lastY: -1, cooldown: 0, gestureHistory: [] };
-
-// Constantes para detección de gestos
-const SWIPE_THRESHOLD = 0.08;
-const SWIPE_VERTICAL_THRESHOLD = 0.06;
-const COOLDOWN_FRAMES = 30;
-const OPEN_PALM_THRESHOLD = 0.1;
-const PINCH_THRESHOLD = 0.05;
-
-// Elementos del DOM
-
-
-let video;
-let canvasElement;
-let canvasCtx;
-let gestureStatus;
-let connectionStatus;
-/*
+// --- VARIABLES GLOBALES ---
 const video = document.getElementById("webcam");
 const canvasElement = document.getElementById("output_canvas");
-const canvasCtx = canvasElement.getContext("2d");
+
+// Comprobación segura para canvasElement
+let canvasCtx = null;
+if (canvasElement) {
+    canvasCtx = canvasElement.getContext("2d");
+} else {
+    console.error("❌ Error: No se encontró el elemento canvas con id 'output_canvas'");
+}
+
 const gestureStatus = document.getElementById("gesture-status");
 const connectionStatus = document.getElementById("connection-status");
-*/
-// Conexión al servidor de Socket.io
-const socket = io();
-console.log("🔄 Conectando a Socket.io...");
-/*
-socket.on("connect", () => {
-    console.log("✅ Conectado al servidor con ID:", socket.id);
-    connectionStatus.innerHTML = "🟢 Conectado";
-    connectionStatus.className = "status connected";
-});
 
-socket.on("disconnect", () => {
-    console.log("❌ Desconectado del servidor");
-    connectionStatus.innerHTML = "🔴 Desconectado";
-    connectionStatus.className = "status disconnected";
-});
-*/
-// --- 2. FUNCIÓN PRINCIPAL DE INICIALIZACIÓN ---
+let handLandmarker = null;
+let webcamRunning = false;
+let lastGestureData = null;
+let lastGestureType = "Ninguno";
+let lastVideoTime = -1;
+let socket = null;
+let drawingUtils = null;
 
-async function runDemo() {
-    // ✅ ¡ASIGNA LOS ELEMENTOS DEL DOM AQUÍ!
-    // Ahora es seguro porque el DOM está cargado.
-    video = document.getElementById("webcam");
-    canvasElement = document.getElementById("output_canvas");
-    canvasCtx = canvasElement.getContext("2d");
-    gestureStatus = document.getElementById("gesture-status");
-    connectionStatus = document.getElementById("connection-status");
+let isLocked = false;
+let lockCooldown = 0;
+const LOCK_COOLDOWN_FRAMES = 10;
+let currentTarget = 'lienzo';
 
-    // ✅ ¡MUEVE TUS LISTENERS DE SOCKET AQUÍ!
-    // Ahora, 'connectionStatus' SÍ existe.
+let targetLienzoButton;
+let targetSlidesButton;
+
+let rightHandState = { lastX: -1, lastY: -1, cooldown: 0 };
+let leftHandState = { lastX: -1, lastY: -1, cooldown: 0 };
+const SWIPE_THRESHOLD = 0.07;
+const COOLDOWN_FRAMES = 5;
+
+// --- CARGAR DESDE OBJETO GLOBAL ---
+// Comprobación segura de que las librerías existen
+if (!window.HandLandmarker || !window.FilesetResolver || !window.DrawingUtils) {
+    console.error("❌ Error: Librería MediaPipe Tasks Vision no cargada. ¿Falta el <script> en el HTML?");
+    alert("Error: Librería MediaPipe no cargada. Revisa la consola.");
+    // Detener ejecución si faltan librerías
+    throw new Error("MediaPipe library not loaded.");
+}
+const { HandLandmarker, FilesetResolver, DrawingUtils } = window;
+
+// --- CONFIGURAR SOCKET.IO ---
+if (typeof io !== 'undefined') {
+    socket = io();
     socket.on("connect", () => {
-        console.log("✅ Conectado al servidor con ID:", socket.id);
-        connectionStatus.innerHTML = "🟢 Conectado"; // <-- Esto funcionará
-        connectionStatus.className = "status connected";
+        console.log(`✅ Conectado al servidor con ID: ${socket.id}`);
+        if (connectionStatus) connectionStatus.innerText = `🟢 Conectado`;
     });
-
     socket.on("disconnect", () => {
         console.log("❌ Desconectado del servidor");
-        connectionStatus.innerHTML = "🔴 Desconectado"; // <-- Esto también
-        connectionStatus.className = "status disconnected";
+        if (connectionStatus) connectionStatus.innerText = "🔴 Desconectado";
     });
-    
+} else {
+    console.error("❌ Error: Librería Socket.IO no cargada.");
+    alert("Error: Librería Socket.IO no cargada. Revisa la consola.");
+    throw new Error("Socket.IO library not loaded.");
+}
+
+// --- LÓGICA PARA CAMBIAR DESTINO ---
+function setTarget(target) {
+    console.log(`🖱️ setTarget llamado con: ${target}`);
+    currentTarget = target;
+    console.log(`🎯 Nuevo destino AHORA es: ${currentTarget}`);
+    if (targetLienzoButton && targetSlidesButton) {
+        targetLienzoButton.classList.toggle('active', target === 'lienzo');
+        targetSlidesButton.classList.toggle('active', target === 'slides');
+    }
+}
+
+// --- CONFIGURAR BOTONES ---
+function setupTargetButtons() {
+    console.log("🛠️ Configurando botones...");
+    targetLienzoButton = document.getElementById('target-lienzo');
+    targetSlidesButton = document.getElementById('target-slides');
+    if (targetLienzoButton) {
+        targetLienzoButton.addEventListener('click', () => {
+            console.log("🖱️ Click en Botón Lienzo");
+            setTarget('lienzo');
+        });
+        console.log(" L- Listener añadido a Lienzo");
+    } else {
+        console.warn(" Botón Lienzo no encontrado");
+    }
+    if (targetSlidesButton) {
+        targetSlidesButton.addEventListener('click', () => {
+            console.log("🖱️ Click en Botón Slides");
+            setTarget('slides');
+        });
+        console.log(" S- Listener añadido a Slides");
+    } else {
+        console.warn(" Botón Slides no encontrado");
+    }
+    setTarget(currentTarget); // Estado inicial
+}
+
+// --- INICIALIZAR MODELO ---
+async function runDemo() {
+    // Salir si canvasCtx no se pudo obtener
+    if (!canvasCtx) {
+        alert("Error crítico: No se pudo obtener el contexto del canvas.");
+        return;
+    }
+
+    console.log("🚀 Inicializando MediaPipe HandLandmarker...");
     try {
-        console.log("🚀 Inicializando MediaPipe HandLandmarker...");
-        
-        const vision = await FilesetResolver.forVisionTasks(
+        const filesetResolver = await FilesetResolver.forVisionTasks(
             "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
         );
-        
-        handLandmarker = await HandLandmarker.createFromOptions(vision, {
+
+        handLandmarker = await HandLandmarker.createFromOptions(filesetResolver, {
             baseOptions: {
-                //modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-                //modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/latest/hand_landmarker.task`,
-                modelAssetPath: `/models/hand_landmarker_lite.task`,
-                //modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/latest/hand_landmarker.task`,
-                //modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/latest/hand_landmarker.task`,
-                delegate: "GPU"
+                // ✅ ¡USA EL MODELO V2 COMPATIBLE!
+                modelAssetPath:
+                // "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/latest/hand_landmarker.task",
+                // ❌ Comenta o borra el modelo v1
+                // modelAssetPath:
+                  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+                delegate: "GPU",
             },
             runningMode: "VIDEO",
             numHands: 2,
-            enableHandClassification: true
+            minHandDetectionConfidence: 0.6,
+            minHandPresenceConfidence: 0.6,
+            minTrackingConfidence: 0.6,
         });
 
+        drawingUtils = new DrawingUtils(canvasCtx);
         console.log("✅ HandLandmarker cargado exitosamente");
         enableCam();
     } catch (error) {
         console.error("❌ Error al inicializar MediaPipe:", error);
-        alert("Error al cargar el modelo de detección de manos. Por favor, recarga la página.");
+        alert("Error al cargar el modelo. Revisa la consola y recarga.");
     }
 }
 
-// --- 3. CONFIGURACIÓN DE LA WEBCAM ---
+// --- ACTIVAR CÁMARA ---
+async function enableCam() {
+    if (webcamRunning || !video) return;
 
-function enableCam() {
-    if (webcamRunning) {
-        webcamRunning = false;
-        return;
-    }
-    
-    const constraints = {
-        video: { 
-            width: 640, 
-            height: 480, 
-            frameRate: { ideal: 30, max: 30 } 
-        }
-    };
-    
-    navigator.mediaDevices.getUserMedia(constraints).then((stream) => {
+    const constraints = { video: { width: 640, height: 480 } };
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = stream;
-        video.addEventListener("loadeddata", async () => {
+
+        video.addEventListener("loadeddata", () => {
             webcamRunning = true;
-            console.log("📷 Webcam iniciada. Empezando predicción...");
-            /*
-            if (handLandmarker) {
-                await handLandmarker.setOptions({ runningMode: "VIDEO" });
-                console.log("🔁 Modelo configurado en modo VIDEO");
+            if (canvasElement && video) {
+                canvasElement.width = video.videoWidth;
+                canvasElement.height = video.videoHeight;
             }
-            */
+            console.log("📷 Webcam iniciada. Empezando predicción...");
             predictWebcam();
         });
-    }).catch((err) => {
+    } catch (err) {
         console.error("❌ Error al acceder a la webcam:", err);
-        alert("Error al acceder a la webcam. Asegúrate de dar permisos de cámara.");
-    });
+        alert("Error al acceder a la webcam. ¿Diste permisos?");
+    }
 }
 
-// --- 4. BUCLE DE PREDICCIÓN MEJORADO ---
+// --- DETECCIÓN CONTINUA ---
+let lastProcessedTime = 0;
+const FRAME_INTERVAL = 1000 / 20; // Procesar ~20 FPS
 
 async function predictWebcam() {
-    if (!webcamRunning) return;
-    
-    canvasElement.width = video.videoWidth;
-    canvasElement.height = video.videoHeight;
+    if (!handLandmarker || !webcamRunning || !video || video.readyState < 2) {
+        if (webcamRunning) requestAnimationFrame(predictWebcam);
+        return
+    };
 
     const now = performance.now();
-    const delta = now - lastInferenceTime;
-
-    // Control de FPS
-    if (delta < (1000 / MAX_FPS)) {
+    if (now - lastProcessedTime < FRAME_INTERVAL) {
         requestAnimationFrame(predictWebcam);
         return;
     }
-    lastInferenceTime = now;
+    lastProcessedTime = now;
 
-    // Reducir cooldowns
-    if (rightHandState.cooldown > 0) rightHandState.cooldown--;
-    if (leftHandState.cooldown > 0) leftHandState.cooldown--;
-
-    try {
-        if (lastVideoTime !== video.currentTime) {
-            lastVideoTime = video.currentTime;
-            const results = await handLandmarker.detectForVideo(video, now);
-            
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-            let gestureToShow = 'Esperando gestos...';
-
-            // Si hay manos detectadas...
-            if (results && results.landmarks && results.landmarks.length > 0) {
-                
-                // Iterar sobre CADA mano detectada
-                for (let i = 0; i < results.landmarks.length; i++) {
-                    if (results.handedness && results.handedness[i] && results.handedness[i][0]) {
-              
-                  const landmarks = results.landmarks[i];
-                  // ✅ Esta línea (la 187) ahora es segura
-                  const hand = results.handedness[i][0].categoryName;
-                    
-                    // Dibujar la mano
-                    drawHand(landmarks, hand);
-
-                    // Procesar múltiples tipos de gestos
-                    const gestureData = processAdvancedGestures(landmarks, hand);
-                    
-                    if (gestureData) {
-                        // Enviar datos con throttling
-                        if (now - lastEmitTime > EMIT_INTERVAL) {
-                            socket.emit('gesture-data', gestureData);
-                            lastEmitTime = now;
-                        }
-                        
-                        // Actualizar UI
-                        gestureToShow = `🤖 ${gestureData.hand}: ${gestureData.type} ${gestureData.direction || ''}`;
-                        
-                        // Añadir efecto visual
-                        addGestureEffect(gestureData);
-                    }
-                }
-                }
-                
-            } else {
-                // Si no hay manos, resetear estados
-                rightHandState.lastX = -1;
-                leftHandState.lastX = -1;
+    if (lastVideoTime !== video.currentTime) {
+        lastVideoTime = video.currentTime;
+        try {
+            const results = handLandmarker.detectForVideo(video, now);
+            if (results && drawingUtils) {
+                drawResults(results);
+                processGestures(results); // Llamada única aquí
             }
-
-            // Actualizar el texto en la UI
-            if (gestureToShow !== lastGestureType) {
-                lastGestureType = gestureToShow;
-                gestureStatus.innerText = gestureToShow;
-            }
-
-            canvasCtx.restore();
+        } catch(error) {
+            console.error("Error en detectForVideo:", error);
         }
-    } catch (error) {
-        console.error("❌ Error durante la predicción:", error);
     }
-    
+
     if (webcamRunning) {
         requestAnimationFrame(predictWebcam);
     }
 }
 
-// --- 5. FUNCIÓN DE DIBUJO MEJORADA ---
-function drawHand(landmarks, handType) {
-    const connections = [
-        [0, 1], [1, 2], [2, 3], [3, 4],       // Pulgar
-        [0, 5], [5, 6], [6, 7], [7, 8],       // Índice
-        [5, 9], [9, 10], [10, 11], [11, 12],  // Medio
-        [9, 13], [13, 14], [14, 15], [15, 16], // Anular
-        [13, 17], [0, 17], [17, 18], [18, 19], [19, 20] // Meñique y Palma
-    ];
-    
-    // Color diferente para cada mano
-    const color = handType === 'Right' ? 'rgba(0, 255, 0, 0.8)' : 'rgba(255, 0, 255, 0.8)';
-    
-    canvasCtx.strokeStyle = color;
-    canvasCtx.lineWidth = 3;
-    
-    for (const conn of connections) {
-        const p1 = landmarks[conn[0]];
-        const p2 = landmarks[conn[1]];
-        if (p1 && p2) {
-            canvasCtx.beginPath();
-            canvasCtx.moveTo(p1.x * canvasElement.width, p1.y * canvasElement.height);
-            canvasCtx.lineTo(p2.x * canvasElement.width, p2.y * canvasElement.height);
-            canvasCtx.stroke();
+// --- DIBUJAR RESULTADOS ---
+function drawResults(results) {
+    if (!canvasCtx || !drawingUtils) return;
+    canvasCtx.save();
+    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+    if (results.landmarks) {
+        for (let i = 0; i < results.landmarks.length; i++) {
+            const landmarks = results.landmarks[i];
+            if (results.handedness && results.handedness[i] && results.handedness[i][0]) {
+                const hand = results.handedness[i][0].categoryName;
+                const color = hand === 'Right' ? '#00FF00' : '#FF00FF';
+                drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, { color: color, lineWidth: 3 });
+                drawingUtils.drawLandmarks(landmarks, { color: '#FF0000', radius: 4 });
+            } else {
+                drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, { color: '#CCCCCC', lineWidth: 3 });
+                drawingUtils.drawLandmarks(landmarks, { color: '#FF0000', radius: 4 });
+            }
         }
     }
-    
-    canvasCtx.fillStyle = color;
-    for (const point of landmarks) {
-        canvasCtx.beginPath();
-        canvasCtx.arc(point.x * canvasElement.width, point.y * canvasElement.height, 4, 0, 2 * Math.PI);
-        canvasCtx.fill();
+    canvasCtx.restore();
+}
+
+// --- PROCESAR GESTOS ---
+function processGestures(results) {
+    // ❌ QUITAR EL BLOQUE if (document.readyState...) DE AQUÍ
+
+    if (!socket) return;
+
+    let detectedGestureData = null;
+    let currentGestureText = "🙌 No se detectan manos...";
+    let fistCount = 0;
+
+    if (rightHandState.cooldown > 0) rightHandState.cooldown--;
+    if (leftHandState.cooldown > 0) leftHandState.cooldown--;
+    if (lockCooldown > 0) lockCooldown--;
+
+    if (results && results.landmarks && results.landmarks.length > 0) {
+        currentGestureText = "🖐️ Mano detectada";
+
+        for (let i = 0; i < results.landmarks.length; i++) {
+            if (results.handedness && results.handedness[i] && results.handedness[i][0]) {
+                const landmarks = results.landmarks[i];
+                const handState = detectFistOrOpen(landmarks);
+                if (handState === 'fist') {
+                    fistCount++;
+                }
+            }
+        }
+
+        if (fistCount === 2 && lockCooldown === 0) {
+            isLocked = !isLocked;
+            lockCooldown = LOCK_COOLDOWN_FRAMES;
+            currentGestureText = isLocked ? "🔒 Bloqueado" : "🔓 Desbloqueado";
+            console.log(`Sistema ${currentGestureText}`);
+            if (gestureStatus && currentGestureText !== lastGestureType) {
+                gestureStatus.innerText = currentGestureText;
+                lastGestureType = currentGestureText;
+            }
+            lastGestureData = null;
+            return;
+        }
+
+        if (isLocked) {
+            currentGestureText = "🔒 Bloqueado";
+            detectedGestureData = null;
+        } else if (lockCooldown === 0) {
+            for (let i = 0; i < results.landmarks.length; i++) {
+                if (results.handedness && results.handedness[i] && results.handedness[i][0]) {
+                    const landmarks = results.landmarks[i];
+                    const hand = results.handedness[i][0].categoryName;
+
+                    if (currentTarget === 'slides') {
+                        const swipeGesture = detectSwipe(landmarks, hand);
+                        if (swipeGesture) {
+                            detectedGestureData = swipeGesture;
+                            currentGestureText = `👉 ${hand} ${swipeGesture.direction} (a Slides)`;
+                            break;
+                        }
+                    } else if (currentTarget === 'lienzo') {
+                        const handState = detectFistOrOpen(landmarks);
+                        if (handState === 'fist') {
+                            if (!detectedGestureData) {
+                                detectedGestureData = { type: 'fist', hand: hand };
+                                currentGestureText = `👊 ${hand} Puño (a Lienzo)`;
+                            }
+                        }
+                    }
+                }
+            }
+            if (!detectedGestureData && currentTarget === 'lienzo') {
+                detectedGestureData = { type: 'open' };
+            }
+        } else {
+            currentGestureText = isLocked ? "🔒 Bloqueado" : "🔓 Desbloqueado";
+            detectedGestureData = null;
+        }
+    } else {
+        if (isLocked) {
+            currentGestureText = "🔒 Bloqueado (sin manos)";
+        } else if (currentTarget === 'lienzo') {
+            detectedGestureData = { type: 'open' };
+        }
+    }
+
+    const dataChanged = JSON.stringify(detectedGestureData) !== JSON.stringify(lastGestureData);
+
+    if (!isLocked && detectedGestureData && dataChanged) {
+        let eventName = '';
+        if (currentTarget === 'slides' && detectedGestureData.type === 'swipe') {
+            eventName = 'gesture-data';
+        } else if (currentTarget === 'lienzo' && (detectedGestureData.type === 'fist' || detectedGestureData.type === 'open')) {
+            eventName = 'hand-state';
+        }
+        if (eventName) {
+            console.log(`📡 Enviando [${eventName}] a ${currentTarget}:`, detectedGestureData);
+            socket.emit(eventName, detectedGestureData);
+            lastGestureData = { ...detectedGestureData };
+        } else {
+            if (dataChanged) lastGestureData = null;
+        }
+    } else if (!isLocked && !detectedGestureData && lastGestureData !== null && currentTarget === 'lienzo') {
+        if (lastGestureData.type !== 'open') {
+            console.log(`📡 Enviando [hand-state] a ${currentTarget}: { type: 'open' } (implícito)`);
+            socket.emit('hand-state', { type: 'open' });
+        }
+        lastGestureData = { type: 'open' };
+    } else if (!isLocked && !(results && results.landmarks && results.landmarks.length > 0) && currentTarget === 'lienzo' && lastGestureData?.type !== 'open') {
+        console.log(`📡 Enviando [hand-state] a ${currentTarget}: { type: 'open' } (sin manos)`);
+        socket.emit('hand-state', { type: 'open' });
+        lastGestureData = { type: 'open' };
+    } else if (isLocked && lastGestureData !== null) {
+        lastGestureData = null;
+    }
+
+    if (gestureStatus && currentGestureText !== lastGestureType) {
+        gestureStatus.innerText = currentGestureText;
+        lastGestureType = currentGestureText;
     }
 }
 
-// --- 6. FUNCIÓN DE PROCESAMIENTO DE GESTOS AVANZADA ---
-function processAdvancedGestures(landmarks, hand) {
+// --- FUNCIÓN DETECTAR SWIPE ---
+function detectSwipe(landmarks, hand) {
     let state = (hand === 'Right') ? rightHandState : leftHandState;
-    
-    // Si estamos en cooldown, no hacer nada
-    if (state.cooldown > 0) {
-        return null;
-    }
-    
-    const handX = landmarks[9].x;
-    const handY = landmarks[9].y;
-    
-    // Detectar diferentes tipos de gestos
+    if (!state) return null;
+    if (state.cooldown > 0) return null;
+    const handX = landmarks[9]?.x;
+    if (handX === undefined) return null;
     let gesture = null;
-    
-    // 1. Swipe horizontal
     if (state.lastX !== -1) {
         const deltaX = handX - state.lastX;
-        
         if (Math.abs(deltaX) > SWIPE_THRESHOLD) {
-            if (deltaX > 0) {
-                gesture = { type: 'swipe', hand: hand, direction: 'right' };
-            } else {
-                gesture = { type: 'swipe', hand: hand, direction: 'left' };
-            }
+            gesture = { type: 'swipe', hand: hand, direction: deltaX > 0 ? 'right' : 'left' };
             state.cooldown = COOLDOWN_FRAMES;
+            state.lastX = -1; state.lastY = -1;
         }
     }
-    
-    // 2. Swipe vertical (si no hay swipe horizontal)
-    if (!gesture && state.lastY !== -1) {
-        const deltaY = handY - state.lastY;
-        
-        if (Math.abs(deltaY) > SWIPE_VERTICAL_THRESHOLD) {
-            if (deltaY > 0) {
-                gesture = { type: 'swipe', hand: hand, direction: 'down' };
-            } else {
-                gesture = { type: 'swipe', hand: hand, direction: 'up' };
-            }
-            state.cooldown = COOLDOWN_FRAMES;
-        }
-    }
-    
-    // 3. Pinch/Click (distancia entre pulgar e índice)
-    if (!gesture) {
-        const thumb = landmarks[4];
-        const index = landmarks[8];
-        const distance = Math.sqrt(
-            Math.pow(thumb.x - index.x, 2) + Math.pow(thumb.y - index.y, 2)
-        );
-        
-        if (distance < PINCH_THRESHOLD) {
-            gesture = { type: 'click', hand: hand };
-            state.cooldown = COOLDOWN_FRAMES * 2; // Cooldown más largo para clicks
-        }
-    }
-    
-    // Actualizar posiciones
-    state.lastX = handX;
-    state.lastY = handY;
-    
+    if (!gesture) { state.lastX = handX; }
     return gesture;
 }
 
-// --- 7. FUNCIÓN AUXILIAR PARA EFECTOS VISUALES ---
-function addGestureEffect(gestureData) {
-    // Crear un efecto visual temporal
-    const effect = document.createElement('div');
-    effect.className = 'gesture-effect';
-    effect.innerText = gestureData.type === 'swipe' ? 
-        `👉 ${gestureData.direction}` : 
-        '👆 click';
-    
-    effect.style.cssText = `
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        font-size: 2rem;
-        pointer-events: none;
-        animation: fadeOut 1s ease-out forwards;
-        z-index: 1000;
-    `;
-    
-    document.body.appendChild(effect);
-    
-    setTimeout(() => {
-        document.body.removeChild(effect);
-    }, 1000);
+// --- FUNCIÓN DETECTAR PUÑO O MANO ABIERTA ---
+function detectFistOrOpen(landmarks) {
+    const tipIndex = landmarks[8]?.y;
+    const knuckleIndex = landmarks[6]?.y;
+    const tipMiddle = landmarks[12]?.y;
+    const knuckleMiddle = landmarks[10]?.y;
+    if ([tipIndex, knuckleIndex, tipMiddle, knuckleMiddle].some(val => val === undefined)) { return 'open'; }
+    if (tipIndex > knuckleIndex && tipMiddle > knuckleMiddle) { return 'fist'; }
+    return 'open';
 }
 
-// --- 8. INICIALIZACIÓN ---
-// Agregar estilos CSS para efectos
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes fadeOut {
-        0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-        100% { opacity: 0; transform: translate(-50%, -50%) scale(1.5); }
-    }
-`;
-document.head.appendChild(style);
+// --- ❌ BORRAR FUNCIÓN ANTIGUA ---
+// function detectSimpleGesture(landmarks) { ... }
 
-// Iniciar cuando el DOM esté listo
+
+// --- ✅ EJECUTAR TODO AL FINAL y SOLO UNA VEZ ---
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', runDemo);
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log("DOM Cargado. Ejecutando runDemo y setupTargetButtons.");
+        runDemo();
+        setupTargetButtons();
+    });
 } else {
+    console.log("DOM ya estaba listo. Ejecutando runDemo y setupTargetButtons.");
     runDemo();
+    setupTargetButtons();
 }
-
-
-
-/*
-// /public/js/camera-main.js
-
-// Importa las clases necesarias desde el bundle de MediaPipe
-import {
-  HandLandmarker,
-  FilesetResolver
-} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.js";
-
-// --- 1. DEFINICIÓN DE VARIABLES GLOBALES ---
-
-let handLandmarker = undefined;
-let runningMode = "VIDEO";
-let webcamRunning = false;
-let lastVideoTime = -1;
-
-const MAX_FPS = 30;
-let lastInferenceTime = 0;
-let lastEmitTime = 0;
-const EMIT_INTERVAL = 100;
-let lastGestureType = 'Ninguno';
-
-// --- ¡NUEVAS VARIABLES PARA GESTOS DE SWIPE POR MANO! ---
-// (Reemplazan toda la lógica de 'pinch' y 'gestureState')
-let rightHandState = { lastX: -1, cooldown: 0 };
-let leftHandState = { lastX: -1, cooldown: 0 };
-
-// Constantes para el nuevo gesto
-const SWIPE_THRESHOLD = 0.08; // Umbral de movimiento para detectar swipe
-const COOLDOWN_FRAMES = 30; // Frames de cooldown (0.5 seg a 60fps)
-const OPEN_PALM_THRESHOLD = 0.1; // Qué tan "abierta" debe estar la mano
-
-// Elementos del DOM
-const video = document.getElementById("webcam");
-const canvasElement = document.getElementById("output_canvas");
-const canvasCtx = canvasElement.getContext("2d");
-const gestureStatus = document.getElementById("gesture-status");
-
-// Conexión al servidor de Socket.io
-const socket = io();
-console.log("Conectando a Socket.io...");
-
-socket.on("connect", () => {
-    console.log("¡Conectado al servidor con ID:", socket.id);
-});
-
-// --- 2. FUNCIÓN PRINCIPAL DE INICIALIZACIÓN ---
-
-async function runDemo() {
-    const vision = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest"
-    );
-    
-    handLandmarker = await HandLandmarker.createFromOptions(vision, {
-        baseOptions: {
-            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-            delegate: "GPU"
-        },
-        runningMode: "IMAGE",
-        numHands: 2, // ¡Importante! Asegurarse de que detecte 2 manos
-
-        enableHandClassification: true
-    });
-
-    console.log("HandLandmarker cargado y listo.");
-    enableCam();
-}
-runDemo();
-
-// --- 3. CONFIGURACIÓN DE LA WEBCAM ---
-
-function enableCam() {
-    if (webcamRunning) {
-        webcamRunning = false;
-    }
-    const constraints = {
-        video: { width: 480, height: 360, frameRate: { ideal: 30, max: 30 } }
-    };
-    navigator.mediaDevices.getUserMedia(constraints).then((stream) => {
-        video.srcObject = stream;
-        video.addEventListener("loadeddata",async () => {
-
-            webcamRunning = true;
-            console.log("Webcam iniciada. Empezando predicción.");
-            if (handLandmarker) {
-            await handLandmarker.setOptions({ runningMode: "VIDEO" }); // 👈 Aquí el cambio
-            console.log("🔁 Modelo configurado en modo VIDEO.");
-    }
-
-    predictWebcam();
-        });
-    }).catch((err) => {
-        console.error("Error al acceder a la webcam: ", err);
-        alert("Error al acceder a la webcam. Asegúrate de dar permisos.");
-    });
-}
-
-// --- 4. BUCLE DE PREDICCIÓN (TOTALMENTE NUEVO) ---
-
-async function predictWebcam() {
-    canvasElement.width = video.videoWidth;
-    canvasElement.height = video.videoHeight;
-
-    const now = performance.now();
-    const delta = now - lastInferenceTime;
-
-    if (delta < (1000 / MAX_FPS)) {
-        window.requestAnimationFrame(predictWebcam);
-        return;
-    }
-    lastInferenceTime = now;
-
-    // Reducir cooldowns
-    if (rightHandState.cooldown > 0) rightHandState.cooldown--;
-    if (leftHandState.cooldown > 0) leftHandState.cooldown--;
-
-    try {
-        if (lastVideoTime !== video.currentTime) {
-            lastVideoTime = video.currentTime;
-            const results = await handLandmarker.detectForVideo(video, now);
-            // ✅ Verificar que haya manos detectadas
-            if (
-                !results ||
-                !results.handedness ||
-                results.handedness.length === 0 ||
-                !results.handedness[0]
-            ) {
-                // No se detectaron manos: salir sin error
-                return;
-            }
-            const handedness = results.handedness[0][0].categoryName;
-            const landmarks = results.landmarks[0];
-
-            // ...tu lógica de envío de gestos
-            
-
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-            let gestureToShow = 'Gesto detectado: Ninguno';
-
-            // Si hay manos detectadas...
-            if (results.landmarks && results.landmarks.length > 0) {
-                
-                // Iterar sobre CADA mano detectada
-                for (let i = 0; i < results.landmarks.length; i++) {
-                    const landmarks = results.landmarks[i];
-                    // Obtener si es 'Left' o 'Right'
-                    const hand = results.handedness[i][0].categoryName;
-                    
-                    // Dibujar la mano
-                    drawHand(landmarks);
-
-                    // Procesar el gesto para ESTA mano
-                    const gestureData = processHandSwipe(landmarks, hand);
-                    
-                    if (gestureData) {
-                        // Enviar datos (con throttling)
-                        if (now - lastEmitTime > EMIT_INTERVAL) {
-                            socket.emit('gesture-data', gestureData);
-                            lastEmitTime = now;
-                        }
-                        // Actualizar UI
-                        gestureToShow = `Gesto: ${gestureData.hand} ${gestureData.type} ${gestureData.direction}`;
-                    }
-                }
-                
-            } else {
-                // Si no hay manos, resetear estados
-                rightHandState.lastX = -1;
-                leftHandState.lastX = -1;
-            }
-
-            // Actualizar el texto en la UI (solo si cambia)
-            if (gestureToShow !== lastGestureType) {
-                lastGestureType = gestureToShow;
-                gestureStatus.innerText = gestureToShow;
-            }
-
-            canvasCtx.restore();
-        }
-    } catch (error) {
-        console.error("Error durante la predicción:", error);
-    }
-    
-    if (webcamRunning) {
-        window.requestAnimationFrame(predictWebcam);
-    }
-}
-
-// --- 5. FUNCIÓN DE DIBUJO (Sin cambios) ---
-function drawHand(landmarks) {
-    const connections = [
-        [0, 1], [1, 2], [2, 3], [3, 4],       // Pulgar
-        [0, 5], [5, 6], [6, 7], [7, 8],       // Índice
-        [5, 9], [9, 10], [10, 11], [11, 12],  // Medio
-        [9, 13], [13, 14], [14, 15], [15, 16], // Anular
-        [13, 17], [0, 17], [17, 18], [18, 19], [19, 20] // Meñique y Palma
-    ];
-    canvasCtx.strokeStyle = 'rgba(0, 255, 0, 0.7)';
-    canvasCtx.lineWidth = 3;
-    for (const conn of connections) {
-        const p1 = landmarks[conn[0]];
-        const p2 = landmarks[conn[1]];
-        if (p1 && p2) {
-            canvasCtx.beginPath();
-            canvasCtx.moveTo(p1.x * canvasElement.width, p1.y * canvasElement.height);
-            canvasCtx.lineTo(p2.x * canvasElement.width, p2.y * canvasElement.height);
-            canvasCtx.stroke();
-        }
-    }
-    canvasCtx.fillStyle = 'rgba(255, 0, 0, 0.7)';
-    for (const point of landmarks) {
-        canvasCtx.beginPath();
-        canvasCtx.arc(point.x * canvasElement.width, point.y * canvasElement.height, 5, 0, 2 * Math.PI);
-        canvasCtx.fill();
-    }
-}
-
-// --- 6. NUEVA FUNCIÓN DE PROCESAMIENTO DE GESTOS ---
-// (Reemplaza la antigua 'processGesture')
-
-function processHandSwipe(landmarks, hand) {
-    const isOpen = isHandOpen(landmarks); // 
-    console.log('Mano:', hand, 'Abierta:', isOpen);
-
-    // 1. Verificar si la palma está abierta
-    //if (!isHandOpen(landmarks)) {
-    if(!isOpen){    
-    
-    // Si la mano no está abierta, resetear la posición para el swipe
-        if (hand === 'Right') {
-            rightHandState.lastX = -1;
-        } else {
-            leftHandState.lastX = -1;
-        }
-        return null;
-    }
-
-    // 2. Obtener el estado correcto (derecho o izquierdo)
-    let state = (hand === 'Right') ? rightHandState : leftHandState;
-
-    // 3. Si estamos en cooldown, no hacer nada
-    if (state.cooldown > 0) {
-        return null;
-    }
-
-    // 4. Lógica de Swipe
-    const handX = landmarks[9].x; // Usamos la base de la palma (landmark 9)
-
-    // Si ya teníamos una posición guardada...
-    if (state.lastX !== -1) {
-        const deltaX = handX - state.lastX;
-
-        // Swipe a la derecha
-        if (deltaX > SWIPE_THRESHOLD) {
-            state.cooldown = COOLDOWN_FRAMES; // Activar cooldown
-            state.lastX = -1; // Resetear posición
-            return { type: 'swipe', hand: hand, direction: 'right' };
-        }
-        // Swipe a la izquierda
-        else if (deltaX < -SWIPE_THRESHOLD) {
-            state.cooldown = COOLDOWN_FRAMES; // Activar cooldown
-            state.lastX = -1; // Resetear posición
-            return { type: 'swipe', hand: hand, direction: 'left' };
-        }
-    }
-
-    // 5. Guardar la posición actual para el próximo frame
-    state.lastX = handX;
-    return null;
-}
-
-// --- 7. NUEVA FUNCIÓN AUXILIAR ---
-
-
-function isHandOpen(landmarks) {
-    const palm = landmarks[9];      // Base del dedo medio
-    const middleTip = landmarks[12]; // Punta del dedo medio
-    const pinkyTip = landmarks[20];  // Punta del meñique
-
-    const distMiddle = Math.abs(palm.y - middleTip.y);
-    const distPinky = Math.abs(palm.y - pinkyTip.y);
-    
-    // Si la distancia 'y' es grande, los dedos están extendidos
-    return distMiddle > OPEN_PALM_THRESHOLD && distPinky > OPEN_PALM_THRESHOLD;
-}
-*/
