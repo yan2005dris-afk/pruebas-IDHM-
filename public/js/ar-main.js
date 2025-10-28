@@ -11,7 +11,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
 import {
-  HandLandmarker,
+  HandLandmarker, 
   FilesetResolver
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.js";
 
@@ -142,7 +142,7 @@ class HandArApp {
 
     setupThreeJS() {
         this.scene = new THREE.Scene();
-        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 100);
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.0001, 100);
         this.camera.position.z = 5;
 
         this.renderer = new THREE.WebGLRenderer({
@@ -174,7 +174,7 @@ async loadModel() {
                 // Clonamos el modelo usando SkeletonUtils
                 const newModel = SkeletonUtils.clone(gltf.scene);
                 
-                const initialScale = 0.2; // El valor que te funcionó
+                const initialScale = 0.05; // El valor que te funcionó
                 newModel.scale.set(initialScale, initialScale, initialScale);
                 newModel.visible = false; // Oculto por defecto
                 
@@ -210,7 +210,7 @@ async loadModel() {
         });
 
         // Listener de video cargado
-        this.video.addEventListener("loadeddata", () => {
+        this.video.addEventListener("playing", () => {
             this.updateMirrorEffect();
             
             if (this.webcamRunning) {
@@ -269,7 +269,7 @@ async loadModel() {
     updateMirrorEffect() {
         if (this.isFrontCamera) {
             this.video.classList.add('mirrored');
-            this.canvas.classList.add('mirrored');
+            //this.canvas.classList.add('mirrored');
         } else {
             this.video.classList.remove('mirrored');
             this.canvas.classList.remove('mirrored');
@@ -279,24 +279,23 @@ async loadModel() {
     onWindowResize() {
         const w = this.video.videoWidth;
         const h = this.video.videoHeight;
-        if(w === 0 || h === 0) return;
+        
+        // Si el video no tiene dimensiones, no hagas nada
+        if (w === 0 || h === 0) return; 
 
+        // 1. Ajusta la resolución interna del canvas
+        // (Esto es lo que estabas haciendo, está perfecto)
         this.renderer.setSize(w, h);
+        
+        // 2. Ajusta el aspect ratio de la cámara 3D
+        // para que coincida EXACTAMENTE con la proporción del video
         this.camera.aspect = w / h;
+        
+        // 3. Aplica los cambios a la cámara
         this.camera.updateProjectionMatrix();
 
-        const container = document.getElementById('ar-container');
-        const windowAspect = window.innerWidth / window.innerHeight;
-        const videoAspect = w / h;
-
-        if (windowAspect > videoAspect) {
-            container.style.width = '100vw';
-            container.style.height = `${window.innerWidth / videoAspect}px`;
-        } else {
-            container.style.height = '100vh';
-            container.style.width = `${window.innerHeight * videoAspect}px`;
-        }
-        this.updateMirrorEffect();
+        // 4. ¡ELIMINAMOS TODO EL CÓDIGO QUE MANEJABA EL 'container' CSS!
+        // Dejamos que el CSS (object-fit: cover) haga su trabajo.
     }
 
     // --- 6. BUCLE PRINCIPAL (ANIMATE) ---
@@ -344,15 +343,54 @@ async loadModel() {
                         model.visible = true; // <-- Usamos model (minúscula)
 
                         const palmPos = landmarks[9];
-                        const x = this.isFrontCamera ? (1.0 - palmPos.x) * 2 - 1 : palmPos.x * 2 - 1;
-                        
-                        const y = -(palmPos.y * 2 - 1);
-                        
-                        const vector = new THREE.Vector3(x, y, 0.5);
+                        const wristPos = landmarks[0];
+                    
+                        let x = palmPos.x;
+                        let y = palmPos.y;
+                        //let z = palmPos.z;
+
+                        // Si es cámara frontal, reflejar X
+                        if (this.isFrontCamera) x = 1 - x;
+
+                        // Convertir a espacio de Three.js
+                        x = (x - 0.5) * 2;
+                        y = -(y - 0.5) * 2;
+
+                        // Calcular posición 3D "flotante" cerca de la cámara
+                        const zNdc = -0.1;
+                        const vector = new THREE.Vector3(x, y, zNdc);
                         vector.unproject(this.camera);
+                        model.position.copy(vector);
+
+                      // --- 2. ESCALA (¡NUEVA LÓGICA!) ---
+                        // Medimos el tamaño de la mano en la pantalla (distancia 2D muñeca-palma)
+                        const dx = palmPos.x - wristPos.x;
+                        const dy = palmPos.y - wristPos.y;
+                        // Distancia euclidiana (qué tan grande se ve la mano)
+                        const handSize = Math.sqrt(dx * dx + dy * dy); 
                         
-                        model.position.set(vector.x, vector.y, vector.z); // <-- Usamos model
+                        // ¡ESTE ES EL NÚMERO CLAVE PARA AJUSTAR!
+                        // Convierte el "tamaño de mano" (ej: 0.15) a la "escala del modelo"
+                        const scaleMultiplier = 0.015 // <-- ¡AJUSTA ESTE NÚMERO! (Prueba 0.3, 0.5, 1.0)
+
+                        const scale = handSize * scaleMultiplier;
+                        model.scale.set(scale, scale, scale);
+
+
+                        // --- 3. ROTACIÓN (¡NUEVA LÓGICA!) ---
+                        // No usar lookAt(). Causa "roll" (giro inestable).
+                        // Ponemos una rotación fija para que mire a la cámara.
                         
+                        model.rotation.set(0, 0, 0); // Resetea la rotación
+                        
+                        // Ajusta esto basado en cómo fue exportado tu modelo GLB.
+                        // La meta es que la "cara" apunte al eje +Z (hacia ti).
+                        // Viendo tu foto del teléfono (de lado), la cara debe estar en el eje X del modelo.
+                        
+                        // PRUEBA 1 (Girar -90 grados en Y):
+                        model.rotation.y = -Math.PI / 2;
+                        /*
+
                         // --- Rotación ---
                         // 1. Rotación base: "Levantar" la calavera
                         model.rotation.x = Math.PI / 2; // 90 grados en X
@@ -361,8 +399,9 @@ async loadModel() {
                         if (handedness === "Left") {
                             model.rotation.y = (3 * Math.PI) / 2; // 270 grados
                         } else { // handedness === "Right"
-                            model.rotation.y = Math.PI / 2; // 90 grados
+                            model.rotation.y = ( Math.PI) / 2; // 90 grados
                         }
+
                         
                         // 3. Rotación Z: Alinear con los dedos
                         const wrist = landmarks[0];
@@ -371,6 +410,7 @@ async loadModel() {
                         const angle = Math.atan2(deltaY_world, deltaX_world) + (Math.PI / 2);
                         
                         model.rotation.z = angle; // <-- Usamos model
+                        */
                     }
                     // Si isHandPalmUp es falso, el 'model' [i] se queda invisible.
                 }
@@ -442,329 +482,3 @@ async loadModel() {
 document.addEventListener('DOMContentLoaded', () => {
     window.handArApp = new HandArApp();
 });
-
-/*
-// /public/js/ar-main.js
-
-// --- 1. IMPORTACIONES ---
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import {
-  HandLandmarker,
-  FilesetResolver
-} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.js";
-
-// --- 2. VARIABLES GLOBALES ---
-
-// MediaPipe
-let handLandmarker = undefined;
-let webcamRunning = false;
-let lastVideoTime = -1;
-
-// Three.js
-let scene, camera, renderer;
-let model; 
-const video = document.getElementById("webcam");
-const canvas = document.getElementById("ar-canvas");
-
-// Variables globales (estas estaban bien)
-let mixer; 
-const clock = new THREE.Clock(); 
-let isFrontCamera = true; 
-
-// Cambio de cámara
-let videoDevices = []; 
-let currentDeviceIndex = 0; 
-let currentStream;
-
-// --- 3. FUNCIÓN DE INICIO ---
-async function main() {
-    await setupMediaPipe();
-    setupThreeJS();
-    await loadModel();
-    await getCameraDevices(); 
-    setupEventListeners(); 
-    startCamera(); 
-}
-main();
-
-// --- 4. MÓDULO DE MEDIAPIPE ---
-
-async function setupMediaPipe() {
-    const vision = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-    );
-    handLandmarker = await HandLandmarker.createFromOptions(vision, {
-        baseOptions: {
-            // ¡OJO! Asegúrate de que esta URL es la correcta. MediaPipe la actualiza a veces.
-            // Esta es la más nueva a Oct 2024:
-            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-            delegate: "GPU"
-        },
-        runningMode: "VIDEO",
-        numHands: 1 
-    });
-    console.log("HandLandmarker listo.");
-}
-
-async function getCameraDevices() {
-    try {
-        await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    } catch (e) {
-        console.error("Permiso de cámara denegado:", e);
-        alert("Necesitas dar permiso a la cámara para continuar.");
-        return; 
-    }
-
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    videoDevices = devices.filter(device => device.kind === 'videoinput');
-    
-    if (videoDevices.length === 0) {
-        alert("No se encontraron cámaras.");
-    } else {
-        console.log("Cámaras encontradas:", videoDevices);
-
-        // --- ¡CORREGIDO! Esta lógica estaba rota y no hacía nada ---
-        const rearCamIndex = videoDevices.findIndex(device => 
-            // 'device' (singular), 'back' (string), toLowerCase() (con paréntesis)
-            device.label.toLowerCase().includes('back') || 
-            device.label.toLowerCase().includes('trasera')
-        );
-
-        if (rearCamIndex !== -1) {
-            console.log("Cámara trasera encontrada, usándola primero.");
-            currentDeviceIndex = rearCamIndex; // <-- Asignar el índice
-            isFrontCamera = false;
-        } else {
-            console.log("No se encontró cámara trasera, usando la frontal/default.");
-            currentDeviceIndex = 0; 
-            isFrontCamera = true;
-        }
-        // --- FIN CORRECCIÓN ---
-
-        if (videoDevices.length < 2) {
-            document.getElementById('switch-cam-btn').style.display = 'none';
-        }
-    }
-}
-
-function startCamera() {
-    if (videoDevices.length === 0) {
-        console.error("No hay cámaras para iniciar.");
-        return;
-    }
-    
-    if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
-    }
-
-    const deviceId = videoDevices[currentDeviceIndex].deviceId;
-    
-    // --- ¡CORREGIDO! Error de tipeo: 'currenDevice' -> 'currentDevice' ---
-    const currentDevice = videoDevices[currentDeviceIndex];
-    isFrontCamera = !currentDevice.label.toLowerCase().includes('back') && !currentDevice.label.toLowerCase().includes('trasera');
-    console.log(`Cambiando a cámara: ${currentDevice.label}. ¿Es frontal? ${isFrontCamera}`);
-    // --- FIN CORRECCIÓN ---
-
-    const constraints = {
-        video: {
-            deviceId: { exact: deviceId },
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-        }
-    };
-    
-    navigator.mediaDevices.getUserMedia(constraints).then((stream) => {
-        currentStream = stream; 
-        video.srcObject = stream;
-        video.play();
-        updateMirrorEffect();
-    }).catch((err) => console.error("Error al iniciar cámara:", err));
-}
-
-function updateMirrorEffect() {
-    if (isFrontCamera) {
-        video.classList.add('mirrored');
-        canvas.classList.add('mirrored');
-    } else {
-        video.classList.remove('mirrored');
-        canvas.classList.remove('mirrored');
-    }
-}
-
-function setupEventListeners() {
-    document.getElementById('switch-cam-btn').addEventListener('click', () => {
-        if (videoDevices.length < 2) return; 
-        currentDeviceIndex = (currentDeviceIndex + 1) % videoDevices.length;
-        console.log("Cambiando a cámara:", videoDevices[currentDeviceIndex].label);
-        startCamera();
-    });
-
-    // --- ¡CORREGIDO! Evento "Loadeddata" -> "loadeddata" (todo minúscula) ---
-    video.addEventListener("loadeddata", () => {
-        updateMirrorEffect();
-        
-        if (webcamRunning) {
-            resizeThreeJS();
-            return;
-        }
-        
-        console.log("Webcam iniciada y datos cargados.");
-        webcamRunning = true;
-        resizeThreeJS(); 
-        predictWebcam();
-    });
-    // --- FIN CORRECCIÓN ---
-}
-
-// --- 5. MÓDULO DE THREE.JS ---
-
-function setupThreeJS() {
-    scene = new THREE.Scene();
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 100);
-    camera.position.z = 5; 
-
-    renderer = new THREE.WebGLRenderer({
-        canvas: canvas,
-        alpha: true 
-    });
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-    scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-    directionalLight.position.set(1, 1, 1);
-    scene.add(directionalLight);
-}
-
-function loadModel() {
-    return new Promise((resolve, reject) => {
-        const loader = new GLTFLoader();
-        loader.load('/models/modelo.glb', (gltf) => {
-            model = gltf.scene;
-            
-            const initialScale = 0.1; 
-            model.scale.set(initialScale, initialScale, initialScale);
-            model.visible = false; 
-            scene.add(model);
-            console.log("Modelo cargado.");
-
-            if (gltf.animations && gltf.animations.length) {
-                console.log("Animaciones encontradas:", gltf.animations);
-                mixer = new THREE.AnimationMixer(model); 
-                const action = mixer.clipAction(gltf.animations[0]);
-                action.play();
-            } else {
-                console.log("El modelo no tiene animaciones.");
-            }
-            resolve();
-        }, undefined, reject);
-    });
-}
-
-function resizeThreeJS() {
-    const w = video.videoWidth;
-    const h = video.videoHeight;
-    if(w === 0 || h === 0) return;
-
-    renderer.setSize(w, h); 
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-
-    const container = document.getElementById('ar-container');
-    const windowAspect = window.innerWidth / window.innerHeight;
-    const videoAspect = w / h;
-
-    if (windowAspect > videoAspect) { 
-        container.style.width = '100vw';
-        container.style.height = `${window.innerWidth / videoAspect}px`;
-    } else { 
-        container.style.height = '100vh';
-        container.style.width = `${window.innerHeight * videoAspect}px`;
-    }
-    updateMirrorEffect();
-}
-
-
-// --- 6. LA MAGIA: BUCLE DE PREDICCIÓN Y RENDER ---
-
-async function predictWebcam() {
-    if (!webcamRunning || !model || !handLandmarker) {
-        window.requestAnimationFrame(predictWebcam);
-        return;
-    }
-
-    const startTimeMs = performance.now();
-    // Añadí video.videoWidth > 0 como chequeo de seguridad
-    if (lastVideoTime !== video.currentTime && video.videoWidth > 0) { 
-        lastVideoTime = video.currentTime;
-        
-        const results = await handLandmarker.detectForVideo(video, startTimeMs);
-        renderer.clear();
-
-        if (results.landmarks && results.landmarks.length > 0) {
-            const landmarks = results.landmarks[0]; 
-
-            if (isHandPalmUp(landmarks)) {
-                model.visible = true;
-
-                const palmPos = landmarks[9]; 
-                const x = isFrontCamera ? (1.0 - palmPos.x) * 2 - 1 : palmPos.x * 2 - 1;
-                const y = -(palmPos.y * 2 - 1); 
-                
-                const vector = new THREE.Vector3(x, y, 0.5); 
-                vector.unproject(camera); 
-                
-                model.position.set(vector.x, vector.y, vector.z); 
-                
-                const wrist = landmarks[0];
-                const deltaX_world = isFrontCamera ? (palmPos.x - wrist.x) * -1 : (palmPos.x - wrist.x);
-                const deltaY_world = palmPos.y - wrist.y;
-                const angle = Math.atan2(deltaY_world, deltaX_world) + (Math.PI / 2);
-                model.rotation.z = angle;
-
-            } else {
-                model.visible = false;
-            }
-        } else {
-            model.visible = false;
-        }
-        
-        // --- ¡CORREGIDO! 'Clock' (Mayúscula) -> 'clock' (minúscula) ---
-        const delta = clock.getDelta();
-        if(mixer){ 
-            mixer.update(delta);
-        }
-        // --- FIN CORRECCIÓN ---
-
-        renderer.render(scene, camera);
-    }
-
-    window.requestAnimationFrame(predictWebcam);
-}
-
-// --- 7. FUNCIÓN DE GESTO ---
-
-// (Esta la tenías, la dejo por si la quieres usar)
-function isHandOpen(landmarks) {
-    const palm = landmarks[9];
-    const middleTip = landmarks[12];
-    const pinkyTip = landmarks[20];
-    const distMiddle = Math.abs(palm.y - middleTip.y);
-    const distPinky = Math.abs(palm.y - pinkyTip.y);
-    const openThreshold = 0.1; 
-    return distMiddle > openThreshold && distPinky > openThreshold;
-}
-
-// (Esta es la que estamos usando)
-function isHandPalmUp(landmarks) {
-    const palmBase = landmarks[9];
-    const middleTip = landmarks[12];
-    const pinkyTip = landmarks[20];
-    const middleDiff = palmBase.y - middleTip.y;
-    const pinkyDiff = palmBase.y - pinkyTip.y;
-    const palmUpThreshold = 0.05; 
-    return middleDiff > palmUpThreshold && pinkyDiff > palmUpThreshold;
-}
-    */
