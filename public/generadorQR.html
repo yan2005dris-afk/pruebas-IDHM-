@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Generador QR</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>  
+
+    <h2>Codigo para el avatar 3D</h2>
+
+    <div id="qrcode"></div>
+
+    <script type="text/javascript">
+        // 3. Los datos que quieres codificar (ej. una URL)
+        var data = "https://www.dihm-muertos.site/lienzo.html";
+
+        // 4. Creamos el QR
+        new QRCode(document.getElementById("qrcode"), {
+            text: data,
+            width: 128,
+            height: 128,
+            colorDark : "#000000",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.H
+        });
+    </script>
+
+</body>
+</html>

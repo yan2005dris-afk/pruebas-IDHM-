@@ -72,7 +72,7 @@ function loadModel() {
     loader.load(
         modelPath, 
         (gltf) => {
-            // Se ejecuta cuando el modelo se carga correctamente
+            // Se ejecuta cuando el modelo se carga correcx|tamente
             model = gltf.scene;
             
             // Centrar y escalar el modelo automáticamente
