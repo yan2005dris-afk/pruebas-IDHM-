@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Módulo de Cámara (MediaPipe)</title>
+
+  
+<style>
+    /* Buena práctica para manejar el tamaño de las cajas */
+    * {
+      box-sizing: border-box;
+    }
+ 
+    body {
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background-color: #f0f0f0;
+      padding: 15px; /* Añadido para que no toque los bordes en móvil */
+    }
+ 
+    h1 {
+      color: #333;
+      text-align: center; /* Buena idea para móviles */
+    }
+ 
+    .video-container {
+      position: relative;
+      width: 100%; /* CAMBIO: Hace que se ajuste al ancho del dispositivo */
+      max-width: 640px; /* CAMBIO: Límite para pantallas grandes */
+      aspect-ratio: 640 / 480; /* CAMBIO: Mantiene la proporción 4:3 */
+      /* height: 480px; -> ELIMINADO */
+      border: 2px solid #555;
+      border-radius: 8px;
+      overflow: hidden;
+      background-color: #000; /* Añadido por si el video tarda en cargar */
+    }
+ 
+    video, canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .mirrored {
+     /*Voltea horizontalmente el elemento*/ 
+    transform: scaleX(-1);
+    }
+
+</style>
+</head>
+<body>
+  <h1>Módulo de Detección de Gestos</h1>
+
+  <div class="video-container">
+    <video id="webcam" autoplay playsinline></video>
+    <canvas id="output_canvas" width="640" height="480"></canvas>
+  </div>
+
+  <p id="gesture-status">Gesto detectado: Ninguno</p>
+  <h2 id="connection-status"></h2>
+
+  <div id="target-selector" style="margin-top: 15px;">
+    <span>Enviar gestos a:</span>
+    <button id="target-slides" class="target-button">📄 Slides</button>
+    <button id="switch-cam-btn">📷 Cambiar Cámara</button>
+
+</div>
+
+<div id="room-connector" style="margin-top: 15px; background: #fff; padding: 10px; border-radius: 5px;">
+    <label for="room-code-input">Código de Sala:</label>
+    <input type="text" id="room-code-input" placeholder="Ej: 52817" />
+    <button id="join-room-btn">Unir</button>
+    <span id="room-status" style="margin-left: 10px;"></span>
+</div>
+
+  <!-- Socket.io -->
+  <script src="/socket.io/socket.io.js"></script>
+
+  <!-- ✅ Cargar vision_bundle como módulo -->
+  <script type="module">
+    import {
+      FilesetResolver,
+      HandLandmarker,
+      DrawingUtils,
+    } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs";
+
+    window.FilesetResolver = FilesetResolver;
+    window.HandLandmarker = HandLandmarker;
+    window.DrawingUtils = DrawingUtils;
+  </script>
+
+  <!-- Tu script principal -->
+  <script type="module" src="/js/camera-main.js"></script>
+</body>
+</html>

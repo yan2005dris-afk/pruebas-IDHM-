@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  web:
+    build: .
+    ports:
+      # Solo expone el puerto a localhost (al servidor mismo)
+      - "3000:3000"
+    env_file:
+      - ./.env
+    volumes:
+      # Esto sincroniza tu carpeta 'public' local con la del contenedor
+      # ¡Muy útil! Puedes cambiar HTML/CSS/JS sin reiniciar el contenedor.
+      - ./public:/usr/src/app/public
+    # Agregamos esto para que el contenedor se reinicie si el VPS se reinicia
+    restart: always

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Módulo de Lienzo 3D (Three.js)</title>
+    <style>
+        /* Reseteo básico para que el canvas ocupe todo */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden; /* Evita barras de scroll */
+            background-color: #111; /* Fondo oscuro */
+        }
+        /* El canvas donde Three.js dibujará */
+        #3d-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        /* Un pequeño texto de ayuda */
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: sans-serif;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+
+
+	<script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+      }
+    }
+    </script>
+</head>
+<body>
+    <div id="info">
+        Controles:
+        <ul>
+            <li><b>Mouse:</b> Arrastrar para rotar, Rueda para zoom.</li>
+            <li><b>Manos (en camera.html):</b> "Pellizco" para escalar y rotar.</li>
+        </ul>
+    </div>
+    
+    <canvas id="3d-canvas"></canvas>
+
+    <script src="/socket.io/socket.io.js"></script>
+    
+    <script src="/js/lienzo-main.js" type="module"></script>
+</body>
+</html>

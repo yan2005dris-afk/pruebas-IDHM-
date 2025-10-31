@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web AR de Manos</title>
+    <style>
+
+        #switch-cam-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 100; /* Para que esté sobre el video */
+            padding: 10px 15px;
+            font-size: 1em;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: 1px solid white;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        #switch-cam-btn:active {
+            background-color: rgba(0, 0, 0, 0.8);
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #111;
+        }
+        /* Contenedor que centra el video */
+        #ar-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        /* El video y el canvas deben superponerse perfectamente */
+        video, canvas {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            
+            /* --- ¡CORRECCIÓN CSS 1! --- */
+            /* ¡Borramos el 'scaleX(-1)' de aquí! */
+            /* El JS lo controlará con la clase .mirrored */
+            transform: translate(-50%, -50%); 
+            
+            width: 100%;
+            height: 100%;
+            object-fit: cover; 
+        }
+
+        .mirrored {
+            transform: translate(-50%, -50%) scaleX(-1);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ar-container">
+        <div style="position: absolute; top: 10px; left: 10px; z-index: 100; color: white; background: rgba(0,0,0,0.5); padding: 5px; border-radius: 3px; font-family: monospace;">
+            FPS: <span id="fps-counter">0</span><br>
+            Triángulos: <span id="triangles-counter">0</span>
+        </div>
+
+        <video id="webcam" autoplay playsinline></video>
+        
+        <canvas id="ar-canvas"></canvas>
+        <button id="switch-cam-btn">Cambiar Cámara</button>
+    </div>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/",
+        "three/addons/utils/SkeletonUtils.js": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/utils/SkeletonUtils.js"
+      }
+    }
+    </script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.js"></script>
+    
+    <script src="/js/ar-main.js" type="module"></script>
+</body>
+</html>

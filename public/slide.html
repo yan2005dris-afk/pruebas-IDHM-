@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Módulo de Diapositivas</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: sans-serif;
+            color: white;
+        }
+        #slide-container {
+            width: 90vw; /* 90% del ancho de la ventana */
+            height: 90vh; /* 90% del alto de la ventana */
+            background-color: #000;
+            border: 2px solid #555;
+            border-radius: 8px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+        #slide-image {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain; /* Mantiene la relación de aspecto */
+        }
+        #slide-number {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            font-size: 2em;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 5px 15px;
+            border-radius: 5px;
+        }
+
+        #lock-overlay {
+        position: fixed;
+        bottom: 20px; /* Posiciona 20px desde abajo */
+        left: 20px;  /* Posiciona 20px desde la izquierda */
+        
+        /* Estos eliminan el oscurecimiento y centrado */
+        width: auto;   /* Ancho automático */
+        height: auto;  /* Alto automático */
+        background-color: transparent; /* Fondo transparente */
+        display: flex; /* Sigue siendo flex para centrar el candado dentro de sí mismo */
+        justify-content: center;
+        align-items: center;
+
+        z-index: 9999; /* Asegura que esté por encima de todo */
+        font-size: 80px; /* Tamaño del candado (ajústalo si quieres) */
+        color: white; /* Color del candado (si fuera un texto) */
+        text-shadow: 0 0 10px rgba(0,0,0,0.5); /* Sombra para que destaque en fondos claros */
+        
+        /* Por defecto está oculto */
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.3s ease, visibility 0.3s ease;
+        
+        /* No debe bloquear el mouse */
+        pointer-events: none; 
+    }
+
+    #lock-overlay.visible {
+        opacity: 1;
+        visibility: visible;
+    }
+
+    </style>
+</head>
+<body>
+    <h3 id="room-code-display" style="position: fixed; top: 10px; left: 10px; z-index: 999; color: white; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px;">
+    Cargando código de sala...
+    </h3>
+
+    <div id="slide-container">
+        <img id="slide-image" src="/slides/slide1.jpg" alt="Diapositiva">
+        <div id="slide-number">1 / ?</div>
+    </div>
+
+<div id="lock-overlay">
+        <span>🔒</span>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    
+    <script src="/js/slides-main.js"></script>
+</body>
+</html>
